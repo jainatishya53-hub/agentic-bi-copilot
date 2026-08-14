@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-bi-postgres
+    environment:
+      POSTGRES_DB: bi_copilot
+      POSTGRES_USER: bi_admin
+      POSTGRES_PASSWORD: local_admin_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/01-init_database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bi_admin -d bi_copilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
