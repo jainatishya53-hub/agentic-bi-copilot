@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from agentic_bi_copilot.api.routes import router
 from agentic_bi_copilot.config import get_settings
 from agentic_bi_copilot.schemas import HealthResponse
 
@@ -10,6 +11,8 @@ app = FastAPI(
     description="Safe natural-language analytics for retail data.",
     version="0.1.0",
 )
+
+app.include_router(router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])
