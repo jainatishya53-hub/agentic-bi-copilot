@@ -27,6 +27,27 @@ def build_test_graph(*, sql_is_safe: bool):
             "error": None,
         }
 
+    def analyze_node(state: AgentState) -> AgentState:
+        del state
+        return {
+            "analysis": {
+                "top_region": "North",
+                "top_region_revenue": 123.45,
+            },
+            "answer": "North generated the highest revenue.",
+            "error": None,
+        }
+
+    def create_chart_node(state: AgentState) -> AgentState:
+        del state
+        return {
+            "chart": {
+                "data": [{"type": "scatter"}],
+                "layout": {},
+            },
+            "error": None,
+        }
+
     def generation_node(state: AgentState) -> AgentState:
         del state
         return {
@@ -68,6 +89,8 @@ def build_test_graph(*, sql_is_safe: bool):
         patch.object(nodes, "sql_generation_node", generation_node),
         patch.object(nodes, "sql_validation_node", validation_node),
         patch.object(nodes, "query_execution_node", execution_node),
+        patch.object(nodes, "analysis_node", analyze_node),
+        patch.object(nodes, "chart_node", create_chart_node),
     ):
         return build_agent_graph()
 
@@ -98,6 +121,9 @@ def test_safe_sql_pauses_and_resumes_with_approval() -> None:
     assert completed["error"] is None
     assert completed["query_result"]["row_count"] == 1
     assert completed["query_result"]["rows"] == [{"name": "North"}]
+    assert completed["answer"] == "North generated the highest revenue."
+    assert completed["analysis"]["top_region"] == "North"
+    assert completed["chart"]["data"] == [{"type": "scatter"}]
 
 
 def test_safe_sql_can_be_rejected() -> None:
@@ -120,6 +146,7 @@ def test_safe_sql_can_be_rejected() -> None:
     assert completed["approved"] is False
     assert completed["rejection_reason"] == "The query needs another filter."
     assert completed["error"] == "SQL execution was rejected by the reviewer."
+
     assert "query_result" not in completed
 
 
@@ -134,3 +161,5 @@ def test_unsafe_sql_never_reaches_approval() -> None:
     assert completed.get("approved") is not True
     assert completed["error"] == "SQL validation failed."
     assert "query_result" not in completed
+    assert "analysis" not in completed
+    assert "chart" not in completed

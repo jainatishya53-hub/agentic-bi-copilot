@@ -93,6 +93,13 @@ def main() -> None:
         "Execution time:",
         f"{query_result['execution_time_ms']:.2f} ms",
     )
+    print("\nBusiness answer:")
+    print(completed["answer"])
+
+    print(
+        "Chart traces:",
+        len(completed["chart"].get("data", [])),
+    )
 
     print("\nUnusual declines:")
 

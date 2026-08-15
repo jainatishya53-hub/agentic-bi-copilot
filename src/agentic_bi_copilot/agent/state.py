@@ -13,3 +13,6 @@ class AgentState(TypedDict, total=False):
     rejection_reason: str | None
     error: str | None
     query_result: dict[str, object]
+    analysis: dict[str, object]
+    answer: str
+    chart: dict[str, object]

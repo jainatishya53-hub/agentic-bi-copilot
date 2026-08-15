@@ -29,6 +29,8 @@ def build_agent_graph():
     workflow.add_node("validate_sql", nodes.sql_validation_node)
     workflow.add_node("human_approval", nodes.human_approval_node)
     workflow.add_node("execute_query", nodes.query_execution_node)
+    workflow.add_node("analyze_results", nodes.analysis_node)
+    workflow.add_node("create_chart", nodes.chart_node)
 
     workflow.add_edge(START, "discover_schema")
     workflow.add_edge("discover_schema", "create_plan")
@@ -53,6 +55,8 @@ def build_agent_graph():
     },
 )
 
-    workflow.add_edge("execute_query", END)
+    workflow.add_edge("execute_query", "analyze_results")
+    workflow.add_edge("analyze_results", "create_chart")
+    workflow.add_edge("create_chart", END)
 
     return workflow.compile(checkpointer=InMemorySaver())
