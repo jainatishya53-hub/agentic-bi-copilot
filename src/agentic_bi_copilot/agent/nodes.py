@@ -28,6 +28,12 @@ AGENT_TABLES = (
     "monthly_targets",
 )
 
+FOLLOW_UP_QUESTIONS = (
+    "Which products contributed most to the unusual declines?",
+    "How did each region perform against its monthly revenue targets?",
+    "Which customer segments drove the regional revenue changes?",
+)
+
 
 def schema_discovery_node(state: AgentState) -> AgentState:
     del state
@@ -92,6 +98,7 @@ def human_approval_node(state: AgentState) -> AgentState:
         {
             "type": "sql_approval",
             "question": state["question"],
+            "plan": state["plan"],
             "sql": state["sql"],
             "sql_explanation": state["sql_explanation"],
             "referenced_tables": state["referenced_tables"],
@@ -124,11 +131,10 @@ def human_approval_node(state: AgentState) -> AgentState:
         "error": "SQL execution was rejected by the reviewer.",
     }
 
+
 def query_execution_node(state: AgentState) -> AgentState:
     if state.get("approved") is not True:
-        raise PermissionError(
-            "SQL execution requires explicit human approval."
-        )
+        raise PermissionError("SQL execution requires explicit human approval.")
 
     validated_result = execute_validated_query(state["sql"])
     query_result = validated_result.query_result
@@ -172,6 +178,7 @@ def analysis_node(state: AgentState) -> AgentState:
     return {
         "analysis": serialized_analysis,
         "answer": create_business_answer(analysis),
+        "follow_up_questions": list(FOLLOW_UP_QUESTIONS),
         "error": None,
     }
 

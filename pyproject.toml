@@ -1,7 +1,7 @@
 [project]
 name = "agentic-bi-copilot"
 version = "0.1.0"
-description = "Add your description here"
+description = "A safe, human-approved agentic analytics copilot for PostgreSQL retail data"
 readme = "README.md"
 authors = [
     { name = "Atishya Jain", email = "jainatishya53@gmail.com" }

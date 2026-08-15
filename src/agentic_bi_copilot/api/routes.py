@@ -28,6 +28,7 @@ router = APIRouter(
 
 ACTIVE_AGENT_RUNS: set[str] = set()
 
+
 @router.post(
     "/manual-query",
     response_model=ManualQueryResponse,
@@ -48,9 +49,7 @@ def manual_query(request: QueryRequest) -> ManualQueryResponse:
         sql=result.sql,
         safety=SQLSafetyResponse(
             is_safe=result.validation.is_safe,
-            referenced_tables=list(
-                result.validation.referenced_tables
-            ),
+            referenced_tables=list(result.validation.referenced_tables),
             checks=list(result.validation.checks),
             errors=list(result.validation.errors),
         ),
@@ -64,20 +63,17 @@ def manual_query(request: QueryRequest) -> ManualQueryResponse:
                 region=finding.region,
                 month=finding.month,
                 revenue=finding.revenue,
-                previous_month_revenue=(
-                    finding.previous_month_revenue
-                ),
+                previous_month_revenue=(finding.previous_month_revenue),
                 change_pct=finding.change_pct,
             )
             for finding in result.analysis.unusual_declines
         ],
         chart=result.chart,
         answer=result.answer,
-        follow_up_questions=list(
-            result.follow_up_questions
-        ),
+        follow_up_questions=list(result.follow_up_questions),
         execution_time_ms=result.execution_time_ms,
     )
+
 
 @router.post(
     "/agent/runs",
@@ -105,9 +101,8 @@ def start_agent_run(request: QueryRequest) -> AgentStartResponse:
         return AgentStartResponse(
             thread_id=thread_id,
             status="failed",
-            error=state.get("error") or (
-                "The workflow ended before requesting approval."
-            ),
+            error=state.get("error")
+            or ("The workflow ended before requesting approval."),
         )
 
     approval_value = interrupts[0].value
@@ -118,9 +113,7 @@ def start_agent_run(request: QueryRequest) -> AgentStartResponse:
             detail="The approval request was not a valid object.",
         )
 
-    approval = AgentApprovalResponse.model_validate(
-        approval_value
-    )
+    approval = AgentApprovalResponse.model_validate(approval_value)
     ACTIVE_AGENT_RUNS.add(thread_id)
 
     return AgentStartResponse(
@@ -169,8 +162,7 @@ def decide_agent_run(
             thread_id=thread_id,
             status="rejected",
             approved=False,
-            error=state.get("rejection_reason")
-            or state.get("error"),
+            error=state.get("rejection_reason") or state.get("error"),
         )
 
     if state.get("error"):
@@ -188,6 +180,7 @@ def decide_agent_run(
         result=build_agent_result(state),
     )
 
+
 def build_agent_result(state: dict[str, Any]) -> AgentResultResponse:
     return AgentResultResponse(
         question=state["question"],
@@ -199,5 +192,6 @@ def build_agent_result(state: dict[str, Any]) -> AgentResultResponse:
         query_result=state["query_result"],
         analysis=state["analysis"],
         answer=state["answer"],
+        follow_up_questions=list(state.get("follow_up_questions", [])),
         chart=state["chart"],
     )

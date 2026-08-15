@@ -32,6 +32,9 @@ def check_backend() -> tuple[bool, str]:
     except (httpx.HTTPError, ValueError) as error:
         return False, f"Backend unavailable: {error}"
 
+    if not isinstance(payload, dict):
+        return False, "Backend returned an unexpected health response."
+
     if payload.get("status") != "healthy":
         return False, "Backend returned an unexpected health response."
 
@@ -55,11 +58,16 @@ def post_to_api(
 
     if response.is_error:
         try:
-            detail = response.json().get(
+            error_payload = response.json()
+        except ValueError:
+            error_payload = {}
+
+        if isinstance(error_payload, dict):
+            detail = error_payload.get(
                 "detail",
                 "The analytics request failed.",
             )
-        except ValueError:
+        else:
             detail = "The analytics request failed."
 
         raise RuntimeError(str(detail))
@@ -123,6 +131,26 @@ def render_safety(validation: dict[str, Any]) -> None:
         st.markdown(f"- ❌ {error}")
 
 
+def render_analysis_plan(plan: dict[str, Any]) -> None:
+    interpreted_question = plan.get("interpreted_question")
+
+    if interpreted_question:
+        st.write(interpreted_question)
+
+    steps = plan.get("steps", [])
+
+    if isinstance(steps, list):
+        for step_number, step in enumerate(steps, start=1):
+            st.markdown(f"{step_number}. {step}")
+
+    assumptions = plan.get("assumptions", [])
+
+    if isinstance(assumptions, list) and assumptions:
+        with st.expander("Assumptions"):
+            for assumption in assumptions:
+                st.markdown(f"- {assumption}")
+
+
 def render_completed_result(
     result: dict[str, Any],
     approval: dict[str, Any],
@@ -148,11 +176,13 @@ def render_completed_result(
         "Six-month revenue",
         format_currency(analysis.get("total_revenue")),
     )
+
     region_column.metric(
         "Top region",
         str(analysis.get("top_region", "—")),
         help=(f"Revenue: {format_currency(analysis.get('top_region_revenue'))}"),
     )
+
     time_column.metric(
         "Database execution",
         (f"{float(query_result.get('execution_time_ms', 0)):.2f} ms"),
@@ -195,6 +225,17 @@ def render_completed_result(
                 width="stretch",
             )
 
+        st.subheader("Suggested follow-up questions")
+
+        follow_up_questions = result.get(
+            "follow_up_questions",
+            [],
+        )
+
+        if isinstance(follow_up_questions, list):
+            for follow_up in follow_up_questions:
+                st.markdown(f"- {follow_up}")
+
     with data_tab:
         st.subheader("Revenue trend")
 
@@ -224,6 +265,13 @@ def render_completed_result(
         st.caption(f"{query_result.get('row_count', 0)} rows returned.")
 
     with details_tab:
+        st.subheader("Analysis plan")
+
+        plan = result.get("plan", {})
+
+        if isinstance(plan, dict):
+            render_analysis_plan(plan)
+
         st.subheader("Referenced tables")
         st.write(", ".join(approval.get("referenced_tables", [])))
 
@@ -241,7 +289,10 @@ def render_completed_result(
             st.write(explanation)
 
         st.subheader("Approved and executed SQL")
-        st.code(str(approval.get("sql", "")), language="sql")
+        st.code(
+            str(approval.get("sql", "")),
+            language="sql",
+        )
 
 
 st.title("Agentic Analytics and BI Copilot")
@@ -321,9 +372,16 @@ if isinstance(agent_start, dict):
                 "not been queried yet."
             )
 
+            plan = approval.get("plan", {})
+
+            if isinstance(plan, dict):
+                st.subheader("Analysis plan")
+                render_analysis_plan(plan)
+
             explanation = approval.get("sql_explanation")
 
             if explanation:
+                st.subheader("SQL explanation")
                 st.write(explanation)
 
             st.subheader("Referenced tables")
@@ -353,6 +411,7 @@ if isinstance(agent_start, dict):
                 type="primary",
                 width="stretch",
             )
+
             reject_clicked = reject_column.button(
                 "Reject SQL",
                 width="stretch",
@@ -426,7 +485,7 @@ if isinstance(agent_decision, dict):
             )
         )
 
-if agent_start:
+if agent_start and not awaiting_approval:
     st.button(
         "Start a new analysis",
         on_click=reset_agent_state,

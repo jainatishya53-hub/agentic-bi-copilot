@@ -15,4 +15,5 @@ class AgentState(TypedDict, total=False):
     query_result: dict[str, object]
     analysis: dict[str, object]
     answer: str
+    follow_up_questions: list[str]
     chart: dict[str, object]

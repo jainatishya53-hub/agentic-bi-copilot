@@ -64,8 +64,10 @@ class SQLDraft(BaseModel):
     explanation: str
     referenced_tables: list[str]
 
+
 class AgentApprovalResponse(BaseModel):
     question: str
+    plan: dict[str, Any] = Field(default_factory=dict)
     sql: str
     sql_explanation: str
     referenced_tables: list[str]
@@ -97,6 +99,7 @@ class AgentResultResponse(BaseModel):
     query_result: dict[str, Any]
     analysis: dict[str, Any]
     answer: str
+    follow_up_questions: list[str] = Field(default_factory=list)
     chart: dict[str, Any]
 
 
