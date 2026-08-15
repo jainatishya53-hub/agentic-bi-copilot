@@ -1,0 +1,112 @@
+from langgraph.types import interrupt
+
+from agentic_bi_copilot.agent.state import AgentState
+from agentic_bi_copilot.database.schema_service import build_schema_context
+from agentic_bi_copilot.schemas import AnalysisPlan
+from agentic_bi_copilot.security.sql_validator import validate_sql
+from agentic_bi_copilot.services.llm import create_analysis_plan, generate_sql
+
+AGENT_TABLES = (
+    "regions",
+    "customers",
+    "orders",
+    "order_items",
+    "products",
+    "monthly_targets",
+)
+
+
+def schema_discovery_node(state: AgentState) -> AgentState:
+    del state
+
+    return {
+        "schema_context": build_schema_context(AGENT_TABLES),
+        "error": None,
+    }
+
+
+def planning_node(state: AgentState) -> AgentState:
+    plan = create_analysis_plan(
+        question=state["question"],
+        schema_context=state["schema_context"],
+    )
+
+    return {
+        "plan": plan.model_dump(mode="json"),
+        "error": None,
+    }
+
+
+def sql_generation_node(state: AgentState) -> AgentState:
+    plan = AnalysisPlan.model_validate(state["plan"])
+
+    draft = generate_sql(
+        question=state["question"],
+        plan=plan,
+        schema_context=state["schema_context"],
+    )
+
+    return {
+        "sql": draft.sql,
+        "sql_explanation": draft.explanation,
+        "referenced_tables": draft.referenced_tables,
+        "error": None,
+    }
+
+
+def sql_validation_node(state: AgentState) -> AgentState:
+    validation = validate_sql(state["sql"])
+
+    error = None
+
+    if not validation.is_safe:
+        error = "SQL validation failed: " + ", ".join(validation.errors)
+
+    return {
+        "validation": {
+            "is_safe": validation.is_safe,
+            "normalized_sql": validation.normalized_sql,
+            "referenced_tables": list(validation.referenced_tables),
+            "checks": list(validation.checks),
+            "errors": list(validation.errors),
+        },
+        "error": error,
+    }
+
+
+def human_approval_node(state: AgentState) -> AgentState:
+    decision = interrupt(
+        {
+            "type": "sql_approval",
+            "question": state["question"],
+            "sql": state["sql"],
+            "sql_explanation": state["sql_explanation"],
+            "referenced_tables": state["referenced_tables"],
+            "validation": state["validation"],
+        }
+    )
+
+    if not isinstance(decision, dict):
+        raise TypeError("Approval response must be an object.")
+
+    approved = decision.get("approved")
+    feedback = decision.get("feedback")
+
+    if not isinstance(approved, bool):
+        raise TypeError("Approval response must include an approved boolean.")
+
+    if feedback is not None and not isinstance(feedback, str):
+        raise TypeError("Approval feedback must be text or null.")
+
+    if approved:
+        return {
+            "approved": True,
+            "rejection_reason": None,
+            "error": None,
+        }
+
+    return {
+        "approved": False,
+        "rejection_reason": feedback or "SQL execution was rejected.",
+        "error": "SQL execution was rejected by the reviewer.",
+    }
