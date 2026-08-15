@@ -48,3 +48,12 @@ class ManualQueryResponse(BaseModel):
     answer: str
     follow_up_questions: list[str]
     execution_time_ms: float
+
+
+class AnalysisPlan(BaseModel):
+    interpreted_question: str
+    required_tables: list[str]
+    steps: list[str]
+    assumptions: list[str]
+    needs_clarification: bool
+    clarification_question: str | None
