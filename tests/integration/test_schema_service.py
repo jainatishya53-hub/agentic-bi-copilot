@@ -74,3 +74,9 @@ def test_rejects_unknown_table() -> None:
         match="Unknown or disallowed tables",
     ):
         build_schema_context(("orders", "secret_table"))
+
+
+def test_schema_context_defines_unusual_decline_threshold() -> None:
+    context = build_schema_context(("orders", "order_items"))
+
+    assert "below -25%" in context

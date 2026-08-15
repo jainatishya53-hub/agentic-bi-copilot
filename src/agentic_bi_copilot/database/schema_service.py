@@ -22,6 +22,7 @@ BUSINESS_RULES = (
     "Only orders with status = 'completed' count toward revenue.",
     "The dataset ends on 2026-07-31.",
     "The last six complete months are 2026-02-01 through 2026-07-31.",
+    "An unusual decline is a month-over-month revenue change below -25%.",
 )
 
 
