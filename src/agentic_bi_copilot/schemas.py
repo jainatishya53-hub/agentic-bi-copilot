@@ -57,3 +57,9 @@ class AnalysisPlan(BaseModel):
     assumptions: list[str]
     needs_clarification: bool
     clarification_question: str | None
+
+
+class SQLDraft(BaseModel):
+    sql: str
+    explanation: str
+    referenced_tables: list[str]
