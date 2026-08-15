@@ -63,3 +63,46 @@ class SQLDraft(BaseModel):
     sql: str
     explanation: str
     referenced_tables: list[str]
+
+class AgentApprovalResponse(BaseModel):
+    question: str
+    sql: str
+    sql_explanation: str
+    referenced_tables: list[str]
+    validation: dict[str, Any]
+
+
+class AgentStartResponse(BaseModel):
+    thread_id: str
+    status: Literal["awaiting_approval", "failed"]
+    approval: AgentApprovalResponse | None = None
+    error: str | None = None
+
+
+class AgentDecisionRequest(BaseModel):
+    approved: bool
+    feedback: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+
+class AgentResultResponse(BaseModel):
+    question: str
+    plan: dict[str, Any]
+    sql: str
+    sql_explanation: str
+    referenced_tables: list[str]
+    validation: dict[str, Any]
+    query_result: dict[str, Any]
+    analysis: dict[str, Any]
+    answer: str
+    chart: dict[str, Any]
+
+
+class AgentResumeResponse(BaseModel):
+    thread_id: str
+    status: Literal["completed", "rejected", "failed"]
+    approved: bool
+    result: AgentResultResponse | None = None
+    error: str | None = None

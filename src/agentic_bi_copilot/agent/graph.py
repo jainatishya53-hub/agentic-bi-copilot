@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -60,3 +62,7 @@ def build_agent_graph():
     workflow.add_edge("create_chart", END)
 
     return workflow.compile(checkpointer=InMemorySaver())
+
+@lru_cache
+def get_agent_graph():
+    return build_agent_graph()
