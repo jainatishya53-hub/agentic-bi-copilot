@@ -38,17 +38,20 @@ def check_backend() -> tuple[bool, str]:
     return True, "Backend connected"
 
 
-def request_analysis(question: str) -> dict[str, Any]:
+def post_to_api(
+    path: str,
+    payload: dict[str, Any],
+    *,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
     try:
         response = httpx.post(
-            f"{settings.api_base_url}/api/v1/manual-query",
-            json={"question": question},
-            timeout=30.0,
+            f"{settings.api_base_url}{path}",
+            json=payload,
+            timeout=timeout,
         )
     except httpx.HTTPError as error:
-        raise RuntimeError(
-            f"Could not reach the analytics API: {error}"
-        ) from error
+        raise RuntimeError(f"Could not reach the analytics API: {error}") from error
 
     if response.is_error:
         try:
@@ -61,24 +64,190 @@ def request_analysis(question: str) -> dict[str, Any]:
 
         raise RuntimeError(str(detail))
 
-    payload = response.json()
+    try:
+        response_payload = response.json()
+    except ValueError as error:
+        raise RuntimeError("The analytics API returned invalid JSON.") from error
 
-    if not isinstance(payload, dict):
-        raise TypeError(
-            "The analytics API returned an unexpected response."
-        )
+    if not isinstance(response_payload, dict):
+        raise TypeError("The analytics API returned an unexpected response.")
 
-    return payload
+    return response_payload
+
+
+def start_agent_run(question: str) -> dict[str, Any]:
+    return post_to_api(
+        "/api/v1/agent/runs",
+        {"question": question},
+    )
+
+
+def submit_agent_decision(
+    thread_id: str,
+    *,
+    approved: bool,
+    feedback: str | None,
+) -> dict[str, Any]:
+    return post_to_api(
+        f"/api/v1/agent/runs/{thread_id}/decision",
+        {
+            "approved": approved,
+            "feedback": feedback,
+        },
+    )
+
+
+def reset_agent_state() -> None:
+    st.session_state.pop("agent_start", None)
+    st.session_state.pop("agent_decision", None)
 
 
 def format_currency(value: Any) -> str:
+    if value is None:
+        return "—"
+
     return f"${float(value):,.2f}"
+
+
+def render_safety(validation: dict[str, Any]) -> None:
+    if validation.get("is_safe"):
+        st.success("SQL passed every required safety check.")
+    else:
+        st.error("SQL did not pass validation.")
+
+    for check in validation.get("checks", []):
+        label = str(check).replace("_", " ").title()
+        st.markdown(f"- ✅ {label}")
+
+    for error in validation.get("errors", []):
+        st.markdown(f"- ❌ {error}")
+
+
+def render_completed_result(
+    result: dict[str, Any],
+    approval: dict[str, Any],
+) -> None:
+    query_result = result.get("query_result", {})
+    analysis = result.get("analysis", {})
+
+    if not isinstance(query_result, dict):
+        st.error("The API returned an invalid query result.")
+        return
+
+    if not isinstance(analysis, dict):
+        st.error("The API returned an invalid analysis result.")
+        return
+
+    st.divider()
+    st.subheader("Business answer")
+    st.write(result.get("answer", "No business answer was returned."))
+
+    total_column, region_column, time_column = st.columns(3)
+
+    total_column.metric(
+        "Six-month revenue",
+        format_currency(analysis.get("total_revenue")),
+    )
+    region_column.metric(
+        "Top region",
+        str(analysis.get("top_region", "—")),
+        help=(f"Revenue: {format_currency(analysis.get('top_region_revenue'))}"),
+    )
+    time_column.metric(
+        "Database execution",
+        (f"{float(query_result.get('execution_time_ms', 0)):.2f} ms"),
+    )
+
+    findings_tab, data_tab, details_tab = st.tabs(
+        [
+            "Findings",
+            "Data and chart",
+            "Agent details",
+        ]
+    )
+
+    with findings_tab:
+        st.subheader("Unusual declines")
+
+        findings = analysis.get("unusual_declines", [])
+
+        if not isinstance(findings, list):
+            findings = []
+
+        findings_frame = pd.DataFrame(findings)
+
+        if findings_frame.empty:
+            st.info("No unusual declines were detected.")
+        else:
+            findings_frame = findings_frame.rename(
+                columns={
+                    "region": "Region",
+                    "month": "Month",
+                    "revenue": "Revenue",
+                    "previous_month_revenue": ("Previous month revenue"),
+                    "change_pct": "Change (%)",
+                }
+            )
+
+            st.dataframe(
+                findings_frame,
+                hide_index=True,
+                width="stretch",
+            )
+
+    with data_tab:
+        st.subheader("Revenue trend")
+
+        chart_spec = result.get("chart")
+
+        if isinstance(chart_spec, dict):
+            figure = go.Figure(chart_spec)
+            st.plotly_chart(
+                figure,
+                width="stretch",
+                config={"displaylogo": False},
+            )
+        else:
+            st.info("No chart was returned.")
+
+        st.subheader("Query result")
+
+        rows = query_result.get("rows", [])
+
+        if isinstance(rows, list):
+            st.dataframe(
+                pd.DataFrame(rows),
+                hide_index=True,
+                width="stretch",
+            )
+
+        st.caption(f"{query_result.get('row_count', 0)} rows returned.")
+
+    with details_tab:
+        st.subheader("Referenced tables")
+        st.write(", ".join(approval.get("referenced_tables", [])))
+
+        st.subheader("SQL safety")
+
+        validation = approval.get("validation", {})
+
+        if isinstance(validation, dict):
+            render_safety(validation)
+
+        explanation = approval.get("sql_explanation")
+
+        if explanation:
+            st.subheader("SQL explanation")
+            st.write(explanation)
+
+        st.subheader("Approved and executed SQL")
+        st.code(str(approval.get("sql", "")), language="sql")
 
 
 st.title("Agentic Analytics and BI Copilot")
 st.caption(
-    "Ask questions about retail performance and receive safe, "
-    "explainable analysis."
+    "Ask a business question, inspect the generated SQL, and approve "
+    "execution before the database is queried."
 )
 
 backend_connected, backend_message = check_backend()
@@ -89,8 +258,17 @@ else:
     st.error(backend_message)
 
 st.info(
-    "Development checkpoint: this screen uses a predefined analytical "
-    "query. Human approval and LLM-generated SQL will be added next."
+    "The agent can generate SQL, but it cannot execute the query until "
+    "you explicitly approve it."
+)
+
+active_start = st.session_state.get("agent_start")
+active_decision = st.session_state.get("agent_decision")
+
+awaiting_approval = (
+    isinstance(active_start, dict)
+    and active_start.get("status") == "awaiting_approval"
+    and not isinstance(active_decision, dict)
 )
 
 with st.form("business_question_form"):
@@ -98,12 +276,13 @@ with st.form("business_question_form"):
         "Business question",
         value=PRIMARY_QUESTION,
         height=120,
+        disabled=awaiting_approval,
     )
 
     submitted = st.form_submit_button(
-        "Analyze",
+        "Generate analysis plan and SQL",
         type="primary",
-        disabled=not backend_connected,
+        disabled=not backend_connected or awaiting_approval,
     )
 
 if submitted:
@@ -112,127 +291,143 @@ if submitted:
     if not cleaned_question:
         st.warning("Enter a business question before submitting.")
     else:
-        st.session_state.pop("query_result", None)
+        reset_agent_state()
 
         try:
             with st.spinner(
-                "Validating SQL and analyzing retail data..."
+                "Discovering the schema, planning the analysis, "
+                "generating SQL, and validating safety..."
             ):
-                st.session_state["query_result"] = (
-                    request_analysis(cleaned_question)
-                )
+                st.session_state["agent_start"] = start_agent_run(cleaned_question)
+
+            st.rerun()
         except (RuntimeError, TypeError) as error:
             st.error(str(error))
 
-result = st.session_state.get("query_result")
+agent_start = st.session_state.get("agent_start")
 
-if result:
-    st.divider()
-    st.subheader("Business answer")
-    st.write(result["answer"])
+if isinstance(agent_start, dict):
+    start_status = agent_start.get("status")
 
-    total_column, region_column, time_column = st.columns(3)
+    if start_status == "awaiting_approval" and awaiting_approval:
+        approval = agent_start.get("approval")
+        thread_id = agent_start.get("thread_id")
 
-    total_column.metric(
-        "Six-month revenue",
-        format_currency(result["total_revenue"]),
-    )
-    region_column.metric(
-        "Top region",
-        result["top_region"],
-        help=(
-            "Revenue: "
-            f"{format_currency(result['top_region_revenue'])}"
-        ),
-    )
-    time_column.metric(
-        "Database execution",
-        f"{result['execution_time_ms']:.2f} ms",
-    )
-
-    overview_tab, data_tab, details_tab = st.tabs(
-        [
-            "Findings",
-            "Data and chart",
-            "Query details",
-        ]
-    )
-
-    with overview_tab:
-        st.subheader("Unusual declines")
-
-        findings_frame = pd.DataFrame(result["findings"])
-
-        if findings_frame.empty:
-            st.info("No unusual declines were detected.")
-        else:
-            findings_frame = findings_frame.rename(
-                columns={
-                    "region": "Region",
-                    "month": "Month",
-                    "revenue": "Revenue",
-                    "previous_month_revenue": (
-                        "Previous month revenue"
-                    ),
-                    "change_pct": "Change (%)",
-                }
+        if isinstance(approval, dict) and isinstance(thread_id, str):
+            st.divider()
+            st.subheader("Human approval required")
+            st.warning(
+                "Review the generated SQL carefully. The database has "
+                "not been queried yet."
             )
-            st.dataframe(
-                findings_frame,
-                hide_index=True,
+
+            explanation = approval.get("sql_explanation")
+
+            if explanation:
+                st.write(explanation)
+
+            st.subheader("Referenced tables")
+            st.write(", ".join(approval.get("referenced_tables", [])))
+
+            validation = approval.get("validation", {})
+
+            if isinstance(validation, dict):
+                st.subheader("Safety validation")
+                render_safety(validation)
+
+            st.subheader("Generated SQL")
+            st.code(
+                str(approval.get("sql", "")),
+                language="sql",
+            )
+
+            rejection_feedback = st.text_input(
+                "Optional feedback if you reject this SQL",
+                placeholder=("Example: Use a different date range."),
+            )
+
+            approve_column, reject_column = st.columns(2)
+
+            approve_clicked = approve_column.button(
+                "Approve and execute",
+                type="primary",
+                width="stretch",
+            )
+            reject_clicked = reject_column.button(
+                "Reject SQL",
                 width="stretch",
             )
 
-        st.subheader("Suggested follow-up questions")
+            if approve_clicked or reject_clicked:
+                approved = approve_clicked
+                feedback = rejection_feedback.strip() or None
 
-        for follow_up in result["follow_up_questions"]:
-            st.markdown(f"- {follow_up}")
+                try:
+                    with st.spinner(
+                        "Executing the approved read-only query..."
+                        if approved
+                        else "Rejecting the query safely..."
+                    ):
+                        st.session_state["agent_decision"] = submit_agent_decision(
+                            thread_id,
+                            approved=approved,
+                            feedback=feedback,
+                        )
 
-    with data_tab:
-        st.subheader("Revenue trend")
-
-        figure = go.Figure(result["chart"])
-        st.plotly_chart(
-            figure,
-            width="stretch",
-            config={"displaylogo": False},
-        )
-
-        st.subheader("Query result")
-
-        result_frame = pd.DataFrame(result["rows"])
-        st.dataframe(
-            result_frame,
-            hide_index=True,
-            width="stretch",
-        )
-
-    with details_tab:
-        st.subheader("Analysis plan")
-
-        for step_number, plan_step in enumerate(
-            result["analysis_plan"],
-            start=1,
-        ):
-            st.markdown(f"{step_number}. {plan_step}")
-
-        st.subheader("Selected tables")
-        st.write(", ".join(result["selected_tables"]))
-
-        st.subheader("SQL safety")
-
-        safety = result["safety"]
-
-        if safety["is_safe"]:
-            st.success("SQL passed every required safety check.")
+                    st.rerun()
+                except (RuntimeError, TypeError) as error:
+                    st.error(str(error))
         else:
-            st.error("SQL did not pass validation.")
+            st.error("The approval response is incomplete.")
 
-        for check in safety["checks"]:
-            st.markdown(f"- ✅ {check.replace('_', ' ').title()}")
+    elif start_status == "failed":
+        st.error(
+            str(
+                agent_start.get(
+                    "error",
+                    "The agent could not prepare the analysis.",
+                )
+            )
+        )
 
-        for error in safety["errors"]:
-            st.markdown(f"- ❌ {error}")
+agent_decision = st.session_state.get("agent_decision")
 
-        st.subheader("Executed SQL")
-        st.code(result["sql"], language="sql")
+if isinstance(agent_decision, dict):
+    decision_status = agent_decision.get("status")
+
+    if decision_status == "completed":
+        completed_result = agent_decision.get("result")
+        approval = (
+            agent_start.get("approval", {}) if isinstance(agent_start, dict) else {}
+        )
+
+        if isinstance(completed_result, dict) and isinstance(
+            approval,
+            dict,
+        ):
+            render_completed_result(
+                completed_result,
+                approval,
+            )
+        else:
+            st.error("The completed response is missing its result.")
+
+    elif decision_status == "rejected":
+        st.divider()
+        st.warning("The SQL was rejected. No analytical query was executed.")
+
+    elif decision_status == "failed":
+        st.error(
+            str(
+                agent_decision.get(
+                    "error",
+                    "The agent workflow failed.",
+                )
+            )
+        )
+
+if agent_start:
+    st.button(
+        "Start a new analysis",
+        on_click=reset_agent_state,
+    )
