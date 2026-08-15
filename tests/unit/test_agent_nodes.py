@@ -1,8 +1,14 @@
+from datetime import date
+from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from agentic_bi_copilot.agent.nodes import (
     AGENT_TABLES,
     planning_node,
+    query_execution_node,
     schema_discovery_node,
     sql_generation_node,
     sql_validation_node,
@@ -107,3 +113,63 @@ def test_sql_validation_node_rejects_write_query() -> None:
     assert result["validation"]["is_safe"] is False
     assert result["validation"]["errors"]
     assert result["error"] is not None
+
+
+def test_query_execution_node_requires_approval() -> None:
+    with (
+        patch(
+            "agentic_bi_copilot.agent.nodes.execute_validated_query"
+        ) as execute_query,
+        pytest.raises(
+            PermissionError,
+            match="explicit human approval",
+        ),
+    ):
+        query_execution_node(
+            {
+                "approved": False,
+                "sql": "SELECT name FROM regions LIMIT 10",
+            }
+        )
+
+    execute_query.assert_not_called()
+
+
+def test_query_execution_node_serializes_query_result() -> None:
+    fake_result = SimpleNamespace(
+        query_result=SimpleNamespace(
+            columns=["month", "revenue"],
+            rows=[
+                {
+                    "month": date(2026, 2, 1),
+                    "revenue": Decimal("123.45"),
+                }
+            ],
+            row_count=1,
+            execution_time_ms=2.5,
+        )
+    )
+
+    sql = "SELECT name FROM regions LIMIT 10"
+
+    with patch(
+        "agentic_bi_copilot.agent.nodes.execute_validated_query",
+        return_value=fake_result,
+    ) as execute_query:
+        result = query_execution_node(
+            {
+                "approved": True,
+                "sql": sql,
+            }
+        )
+
+    execute_query.assert_called_once_with(sql)
+    assert result["query_result"]["columns"] == ["month", "revenue"]
+    assert result["query_result"]["rows"] == [
+        {
+            "month": "2026-02-01",
+            "revenue": 123.45,
+        }
+    ]
+    assert result["query_result"]["row_count"] == 1
+    assert result["error"] is None

@@ -1,6 +1,10 @@
+from fastapi.encoders import jsonable_encoder
 from langgraph.types import interrupt
 
 from agentic_bi_copilot.agent.state import AgentState
+from agentic_bi_copilot.database.query_service import (
+    execute_validated_query,
+)
 from agentic_bi_copilot.database.schema_service import build_schema_context
 from agentic_bi_copilot.schemas import AnalysisPlan
 from agentic_bi_copilot.security.sql_validator import validate_sql
@@ -109,4 +113,28 @@ def human_approval_node(state: AgentState) -> AgentState:
         "approved": False,
         "rejection_reason": feedback or "SQL execution was rejected.",
         "error": "SQL execution was rejected by the reviewer.",
+    }
+
+def query_execution_node(state: AgentState) -> AgentState:
+    if state.get("approved") is not True:
+        raise PermissionError(
+            "SQL execution requires explicit human approval."
+        )
+
+    validated_result = execute_validated_query(state["sql"])
+    query_result = validated_result.query_result
+
+    serialized_rows = jsonable_encoder(query_result.rows)
+
+    if not isinstance(serialized_rows, list):
+        raise TypeError("Serialized query rows must be a list.")
+
+    return {
+        "query_result": {
+            "columns": list(query_result.columns),
+            "rows": serialized_rows,
+            "row_count": query_result.row_count,
+            "execution_time_ms": query_result.execution_time_ms,
+        },
+        "error": None,
     }

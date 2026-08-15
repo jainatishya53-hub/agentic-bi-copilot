@@ -48,13 +48,28 @@ def build_test_graph(*, sql_is_safe: bool):
             "error": None if sql_is_safe else "SQL validation failed.",
         }
 
+    def execution_node(state: AgentState) -> AgentState:
+        if state.get("approved") is not True:
+            raise PermissionError("Execution reached without approval.")
+
+        return {
+            "query_result": {
+                "columns": ["name"],
+                "rows": [{"name": "North"}],
+                "row_count": 1,
+                "execution_time_ms": 1.0,
+            },
+            "error": None,
+        }
+
     with (
-            patch.object(nodes, "schema_discovery_node", schema_node),
-            patch.object(nodes, "planning_node", plan_node),
-            patch.object(nodes, "sql_generation_node", generation_node),
-            patch.object(nodes, "sql_validation_node", validation_node),
-        ):
-            return build_agent_graph()
+        patch.object(nodes, "schema_discovery_node", schema_node),
+        patch.object(nodes, "planning_node", plan_node),
+        patch.object(nodes, "sql_generation_node", generation_node),
+        patch.object(nodes, "sql_validation_node", validation_node),
+        patch.object(nodes, "query_execution_node", execution_node),
+    ):
+        return build_agent_graph()
 
 
 def test_safe_sql_pauses_and_resumes_with_approval() -> None:
@@ -81,6 +96,8 @@ def test_safe_sql_pauses_and_resumes_with_approval() -> None:
     assert completed["approved"] is True
     assert completed["rejection_reason"] is None
     assert completed["error"] is None
+    assert completed["query_result"]["row_count"] == 1
+    assert completed["query_result"]["rows"] == [{"name": "North"}]
 
 
 def test_safe_sql_can_be_rejected() -> None:
@@ -103,6 +120,7 @@ def test_safe_sql_can_be_rejected() -> None:
     assert completed["approved"] is False
     assert completed["rejection_reason"] == "The query needs another filter."
     assert completed["error"] == "SQL execution was rejected by the reviewer."
+    assert "query_result" not in completed
 
 
 def test_unsafe_sql_never_reaches_approval() -> None:
@@ -115,3 +133,4 @@ def test_unsafe_sql_never_reaches_approval() -> None:
     assert completed["validation"]["is_safe"] is False
     assert completed.get("approved") is not True
     assert completed["error"] == "SQL validation failed."
+    assert "query_result" not in completed

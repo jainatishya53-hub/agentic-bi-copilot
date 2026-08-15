@@ -12,3 +12,4 @@ class AgentState(TypedDict, total=False):
     approved: bool
     rejection_reason: str | None
     error: str | None
+    query_result: dict[str, object]
