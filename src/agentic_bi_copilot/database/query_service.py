@@ -13,10 +13,12 @@ from agentic_bi_copilot.security.sql_validator import (
 
 
 class ResultLimitExceededError(RuntimeError):
-    pass
+    """Raised when a query returns more rows than allowed."""
 
 
 class UnsafeQueryError(ValueError):
+    """Raised when SQL fails the safety checks."""
+
     def __init__(self, validation: SQLValidationResult) -> None:
         self.validation = validation
 
@@ -26,6 +28,8 @@ class UnsafeQueryError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class QueryResult:
+    """Store the data returned by a database query."""
+
     columns: list[str]
     rows: list[dict[str, Any]]
     row_count: int
@@ -34,37 +38,60 @@ class QueryResult:
 
 @dataclass(frozen=True, slots=True)
 class ValidatedQueryResult:
+    """Store both the safety result and the database result."""
+
     validation: SQLValidationResult
     query_result: QueryResult
 
 
-def execute_readonly_query(sql: str) -> QueryResult:
-    settings = get_settings()
-    started_at = perf_counter()
-
+def _run_readonly_query(
+    sql: str,
+    statement_timeout_ms: int,
+    fetch_limit: int,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Run SQL inside a read-only database transaction."""
     with database_connection() as connection, connection.begin():
         connection.execute(text("SET TRANSACTION READ ONLY"))
+
+        # Stop queries that take longer than the configured time.
         connection.execute(
-            text(
-                "SET LOCAL statement_timeout = "
-                f"'{settings.sql_statement_timeout_ms}ms'"
-            )
+            text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
         )
 
         result = connection.execute(text(sql))
         columns = list(result.keys())
-        rows = [
-            dict(row)
-            for row in result.mappings().fetchmany(
-                settings.max_result_rows + 1
-            )
-        ]
+        rows = [dict(row) for row in result.mappings().fetchmany(fetch_limit)]
 
-    if len(rows) > settings.max_result_rows:
+    return columns, rows
+
+
+def _check_result_limit(
+    rows: list[dict[str, Any]],
+    max_result_rows: int,
+) -> None:
+    """Raise an error when a query returns too many rows."""
+    if len(rows) > max_result_rows:
         raise ResultLimitExceededError(
-            "Query returned more than "
-            f"{settings.max_result_rows} rows."
+            f"Query returned more than {max_result_rows} rows."
         )
+
+
+def execute_readonly_query(sql: str) -> QueryResult:
+    """Execute SQL with database and application safety limits."""
+    settings = get_settings()
+    started_at = perf_counter()
+
+    # Fetch one extra row so we can detect an oversized result.
+    columns, rows = _run_readonly_query(
+        sql=sql,
+        statement_timeout_ms=settings.sql_statement_timeout_ms,
+        fetch_limit=settings.max_result_rows + 1,
+    )
+
+    _check_result_limit(
+        rows=rows,
+        max_result_rows=settings.max_result_rows,
+    )
 
     execution_time_ms = round(
         (perf_counter() - started_at) * 1000,
@@ -80,6 +107,7 @@ def execute_readonly_query(sql: str) -> QueryResult:
 
 
 def execute_validated_query(sql: str) -> ValidatedQueryResult:
+    """Validate SQL before sending it to the database."""
     validation = validate_sql(sql)
 
     if not validation.is_safe or validation.normalized_sql is None:

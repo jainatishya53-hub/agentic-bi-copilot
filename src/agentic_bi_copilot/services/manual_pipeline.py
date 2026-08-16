@@ -22,6 +22,7 @@ PRIMARY_QUESTION = (
     "identify unusual declines, and generate a suitable chart."
 )
 
+
 PRIMARY_QUERY = """
 WITH monthly_revenue AS (
     SELECT
@@ -87,12 +88,39 @@ LIMIT 500
 """
 
 
+ANALYSIS_PLAN = (
+    "Use completed orders from January through July 2026.",
+    "Calculate monthly revenue for each region.",
+    "Return February through July as the six complete months.",
+    "Calculate month-over-month revenue changes.",
+    "Flag declines of 20% or more.",
+    "Render a multi-series line chart.",
+)
+
+
+SELECTED_TABLES = (
+    "customers",
+    "order_items",
+    "orders",
+    "regions",
+)
+
+
+FOLLOW_UP_QUESTIONS = (
+    "Which products contributed most to the largest decline?",
+    "How did each region perform against its monthly target?",
+    "Which customer segments changed most during these months?",
+)
+
+
 class UnsupportedQuestionError(ValueError):
-    pass
+    """Raised when the manual pipeline cannot answer a question."""
 
 
 @dataclass(frozen=True, slots=True)
 class ManualPipelineResult:
+    """Store the complete result of the manual pipeline."""
+
     question: str
     analysis_plan: tuple[str, ...]
     selected_tables: tuple[str, ...]
@@ -107,26 +135,32 @@ class ManualPipelineResult:
     execution_time_ms: float
 
 
-def supports_primary_question(question: str) -> bool:
+def _get_question_words(question: str) -> set[str]:
+    """Convert a question into a set of simple lowercase words."""
     normalized_question = re.sub(
         r"[^a-z0-9\s]",
         " ",
         question.lower(),
     )
-    words = set(normalized_question.split())
 
-    return all(
-        (
-            "revenue" in words,
-            "six" in words,
-            any(word.startswith("region") for word in words),
-            any(word.startswith("month") for word in words),
-            any(word.startswith("declin") for word in words),
-        )
-    )
+    return set(normalized_question.split())
+
+
+def supports_primary_question(question: str) -> bool:
+    """Check whether the manual pipeline supports the question."""
+    words = _get_question_words(question)
+
+    has_revenue = "revenue" in words
+    has_six = "six" in words
+    has_region = any(word.startswith("region") for word in words)
+    has_month = any(word.startswith("month") for word in words)
+    has_decline = any(word.startswith("declin") for word in words)
+
+    return has_revenue and has_six and has_region and has_month and has_decline
 
 
 def create_business_answer(analysis: RevenueAnalysis) -> str:
+    """Create a readable summary of the revenue analysis."""
     largest_decline = analysis.unusual_declines[0]
     decline_count = len(analysis.unusual_declines)
 
@@ -143,47 +177,37 @@ def create_business_answer(analysis: RevenueAnalysis) -> str:
 
 
 def run_manual_pipeline(question: str) -> ManualPipelineResult:
+    """Run the deterministic regional revenue pipeline."""
     if not supports_primary_question(question):
         raise UnsupportedQuestionError(
             "The manual MVP currently supports only regional revenue "
             "comparison for the last six complete months."
         )
 
+    # Validate the fixed SQL before executing it.
     execution = execute_validated_query(PRIMARY_QUERY)
     query_result = execution.query_result
+
     analysis = analyze_regional_revenue(query_result.rows)
+
     figure = create_regional_revenue_chart(
         query_result.rows,
         analysis,
     )
+    chart = chart_to_spec(figure)
+    answer = create_business_answer(analysis)
 
     return ManualPipelineResult(
         question=question,
-        analysis_plan=(
-            "Use completed orders from January through July 2026.",
-            "Calculate monthly revenue for each region.",
-            "Return February through July as the six complete months.",
-            "Calculate month-over-month revenue changes.",
-            "Flag declines of 20% or more.",
-            "Render a multi-series line chart.",
-        ),
-        selected_tables=(
-            "customers",
-            "order_items",
-            "orders",
-            "regions",
-        ),
+        analysis_plan=ANALYSIS_PLAN,
+        selected_tables=SELECTED_TABLES,
         sql=execution.validation.normalized_sql or PRIMARY_QUERY,
         validation=execution.validation,
         columns=query_result.columns,
         rows=query_result.rows,
         analysis=analysis,
-        chart=chart_to_spec(figure),
-        answer=create_business_answer(analysis),
-        follow_up_questions=(
-            "Which products contributed most to the largest decline?",
-            "How did each region perform against its monthly target?",
-            "Which customer segments changed most during these months?",
-        ),
+        chart=chart,
+        answer=answer,
+        follow_up_questions=FOLLOW_UP_QUESTIONS,
         execution_time_ms=query_result.execution_time_ms,
     )

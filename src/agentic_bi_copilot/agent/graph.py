@@ -8,6 +8,7 @@ from agentic_bi_copilot.agent.state import AgentState
 
 
 def route_after_validation(state: AgentState) -> str:
+    """Continue to approval only when the SQL is safe."""
     validation = state.get("validation")
 
     if isinstance(validation, dict) and validation.get("is_safe") is True:
@@ -15,7 +16,9 @@ def route_after_validation(state: AgentState) -> str:
 
     return END
 
+
 def route_after_approval(state: AgentState) -> str:
+    """Execute the query only after explicit approval."""
     if state.get("approved") is True:
         return "execute_query"
 
@@ -23,22 +26,50 @@ def route_after_approval(state: AgentState) -> str:
 
 
 def build_agent_graph():
+    """Build and compile the complete agent workflow."""
     workflow = StateGraph(AgentState)
 
-    workflow.add_node("discover_schema", nodes.schema_discovery_node)
-    workflow.add_node("create_plan", nodes.planning_node)
-    workflow.add_node("generate_sql", nodes.sql_generation_node)
-    workflow.add_node("validate_sql", nodes.sql_validation_node)
-    workflow.add_node("human_approval", nodes.human_approval_node)
-    workflow.add_node("execute_query", nodes.query_execution_node)
-    workflow.add_node("analyze_results", nodes.analysis_node)
-    workflow.add_node("create_chart", nodes.chart_node)
+    # Add each processing step to the graph.
+    workflow.add_node(
+        "discover_schema",
+        nodes.schema_discovery_node,
+    )
+    workflow.add_node(
+        "create_plan",
+        nodes.planning_node,
+    )
+    workflow.add_node(
+        "generate_sql",
+        nodes.sql_generation_node,
+    )
+    workflow.add_node(
+        "validate_sql",
+        nodes.sql_validation_node,
+    )
+    workflow.add_node(
+        "human_approval",
+        nodes.human_approval_node,
+    )
+    workflow.add_node(
+        "execute_query",
+        nodes.query_execution_node,
+    )
+    workflow.add_node(
+        "analyze_results",
+        nodes.analysis_node,
+    )
+    workflow.add_node(
+        "create_chart",
+        nodes.chart_node,
+    )
 
+    # Define the normal processing order.
     workflow.add_edge(START, "discover_schema")
     workflow.add_edge("discover_schema", "create_plan")
     workflow.add_edge("create_plan", "generate_sql")
     workflow.add_edge("generate_sql", "validate_sql")
 
+    # Unsafe SQL ends the workflow before approval.
     workflow.add_conditional_edges(
         "validate_sql",
         route_after_validation,
@@ -48,21 +79,33 @@ def build_agent_graph():
         },
     )
 
+    # Rejected SQL ends the workflow before execution.
     workflow.add_conditional_edges(
-    "human_approval",
-    route_after_approval,
-    {
-        "execute_query": "execute_query",
-        END: END,
-    },
-)
+        "human_approval",
+        route_after_approval,
+        {
+            "execute_query": "execute_query",
+            END: END,
+        },
+    )
 
-    workflow.add_edge("execute_query", "analyze_results")
-    workflow.add_edge("analyze_results", "create_chart")
+    workflow.add_edge(
+        "execute_query",
+        "analyze_results",
+    )
+    workflow.add_edge(
+        "analyze_results",
+        "create_chart",
+    )
     workflow.add_edge("create_chart", END)
 
-    return workflow.compile(checkpointer=InMemorySaver())
+    # The checkpointer allows an interrupted workflow to resume.
+    checkpointer = InMemorySaver()
+
+    return workflow.compile(checkpointer=checkpointer)
+
 
 @lru_cache
 def get_agent_graph():
+    """Create and reuse one resumable agent graph."""
     return build_agent_graph()

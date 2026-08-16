@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# General request and health-check models.
+
 
 class HealthResponse(BaseModel):
     status: Literal["healthy"]
@@ -14,6 +16,9 @@ class QueryRequest(BaseModel):
         min_length=10,
         max_length=500,
     )
+
+
+# Shared analytics response models.
 
 
 class SQLSafetyResponse(BaseModel):
@@ -29,6 +34,9 @@ class DeclineFindingResponse(BaseModel):
     revenue: Decimal
     previous_month_revenue: Decimal
     change_pct: Decimal
+
+
+# Deterministic manual-pipeline response.
 
 
 class ManualQueryResponse(BaseModel):
@@ -50,6 +58,9 @@ class ManualQueryResponse(BaseModel):
     execution_time_ms: float
 
 
+# Structured responses returned by the language model.
+
+
 class AnalysisPlan(BaseModel):
     interpreted_question: str
     required_tables: list[str]
@@ -65,6 +76,9 @@ class SQLDraft(BaseModel):
     referenced_tables: list[str]
 
 
+# Human-approval agent request and response models.
+
+
 class AgentApprovalResponse(BaseModel):
     question: str
     plan: dict[str, Any] = Field(default_factory=dict)
@@ -76,7 +90,10 @@ class AgentApprovalResponse(BaseModel):
 
 class AgentStartResponse(BaseModel):
     thread_id: str
-    status: Literal["awaiting_approval", "failed"]
+    status: Literal[
+        "awaiting_approval",
+        "failed",
+    ]
     approval: AgentApprovalResponse | None = None
     error: str | None = None
 
@@ -105,7 +122,11 @@ class AgentResultResponse(BaseModel):
 
 class AgentResumeResponse(BaseModel):
     thread_id: str
-    status: Literal["completed", "rejected", "failed"]
+    status: Literal[
+        "completed",
+        "rejected",
+        "failed",
+    ]
     approved: bool
     result: AgentResultResponse | None = None
     error: str | None = None

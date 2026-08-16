@@ -60,6 +60,8 @@ PROHIBITED_FUNCTIONS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class SQLValidationResult:
+    """Store the result of all SQL safety checks."""
+
     is_safe: bool
     normalized_sql: str | None
     referenced_tables: tuple[str, ...]
@@ -71,6 +73,7 @@ def invalid_result(
     *errors: str,
     referenced_tables: tuple[str, ...] = (),
 ) -> SQLValidationResult:
+    """Create a failed SQL validation result."""
     return SQLValidationResult(
         is_safe=False,
         normalized_sql=None,
@@ -80,11 +83,10 @@ def invalid_result(
     )
 
 
-def validate_sql(sql: str) -> SQLValidationResult:
-    settings = get_settings()
-
+def _parse_query(sql: str) -> exp.Query | str:
+    """Parse SQL and return either one query or an error message."""
     if not sql.strip():
-        return invalid_result("empty_query")
+        return "empty_query"
 
     try:
         statements = [
@@ -93,39 +95,55 @@ def validate_sql(sql: str) -> SQLValidationResult:
             if statement is not None
         ]
     except ParseError as error:
-        return invalid_result(f"parse_error: {error}")
+        return f"parse_error: {error}"
 
     if len(statements) != 1:
-        return invalid_result("multiple_statements")
+        return "multiple_statements"
 
     statement = statements[0]
 
     if not isinstance(statement, exp.Query):
-        return invalid_result("non_select_statement")
+        return "non_select_statement"
 
+    return statement
+
+
+def _find_prohibited_operation(
+    statement: exp.Query,
+) -> str | None:
+    """Return the first prohibited SQL operation found."""
     for node in statement.walk():
         operation_name = type(node).__name__.lower()
 
         if operation_name in PROHIBITED_OPERATION_NAMES:
-            return invalid_result(
-                f"prohibited_operation: {operation_name}"
-            )
+            return f"prohibited_operation: {operation_name}"
 
+    return None
+
+
+def _find_prohibited_function(
+    statement: exp.Query,
+) -> str | None:
+    """Return the first prohibited SQL function found."""
     for function in statement.find_all(exp.Func):
-        function_name = (
-            function.name or function.sql_name()
-        ).lower()
+        function_name = (function.name or function.sql_name()).lower()
 
         if function_name in PROHIBITED_FUNCTIONS:
-            return invalid_result(
-                f"prohibited_function: {function_name}"
-            )
+            return f"prohibited_function: {function_name}"
 
-    cte_names = {
-        cte.alias_or_name.lower()
-        for cte in statement.find_all(exp.CTE)
-    }
+    return None
 
+
+def _get_cte_names(statement: exp.Query) -> set[str]:
+    """Return the names of common table expressions in the query."""
+    return {cte.alias_or_name.lower() for cte in statement.find_all(exp.CTE)}
+
+
+def _get_referenced_tables(
+    statement: exp.Query,
+) -> tuple[tuple[str, ...], str | None]:
+    """Collect allowed table names and report unauthorized references."""
+    cte_names = _get_cte_names(statement)
     referenced_tables: set[str] = set()
 
     for table in statement.find_all(exp.Table):
@@ -133,77 +151,100 @@ def validate_sql(sql: str) -> SQLValidationResult:
         schema_name = (table.db or "").lower()
         catalog_name = (table.catalog or "").lower()
 
-        if (
-            not schema_name
-            and not catalog_name
-            and table_name in cte_names
-        ):
+        is_cte = not schema_name and not catalog_name and table_name in cte_names
+
+        if is_cte:
             continue
 
         if catalog_name:
-            return invalid_result(
-                f"unauthorized_catalog: {catalog_name}"
-            )
+            return (), f"unauthorized_catalog: {catalog_name}"
 
         if schema_name not in ALLOWED_SCHEMAS:
-            return invalid_result(
-                f"unauthorized_schema: {schema_name}"
-            )
+            return (), f"unauthorized_schema: {schema_name}"
 
         if table_name not in ALLOWED_TABLES:
-            return invalid_result(
-                f"unauthorized_table: {table_name}"
-            )
+            return (), f"unauthorized_table: {table_name}"
 
         referenced_tables.add(table_name)
 
-    sorted_tables = tuple(sorted(referenced_tables))
+    return tuple(sorted(referenced_tables)), None
+
+
+def _validate_limit(
+    statement: exp.Query,
+    max_result_rows: int,
+) -> str | None:
+    """Check that the query has a valid row limit."""
     limit_clause = statement.args.get("limit")
 
     if limit_clause is None:
-        return invalid_result(
-            "missing_limit",
-            referenced_tables=sorted_tables,
-        )
+        return "missing_limit"
 
     limit_expression = limit_clause.expression
 
-    if (
-        not isinstance(limit_expression, exp.Literal)
-        or limit_expression.is_string
-    ):
-        return invalid_result(
-            "invalid_limit",
-            referenced_tables=sorted_tables,
-        )
+    if not isinstance(limit_expression, exp.Literal) or limit_expression.is_string:
+        return "invalid_limit"
 
     try:
         limit_value = int(limit_expression.this)
     except (TypeError, ValueError):
-        return invalid_result(
-            "invalid_limit",
-            referenced_tables=sorted_tables,
-        )
+        return "invalid_limit"
 
     if limit_value <= 0:
+        return "invalid_limit"
+
+    if limit_value > max_result_rows:
+        return f"limit_exceeds_{max_result_rows}"
+
+    return None
+
+
+def validate_sql(sql: str) -> SQLValidationResult:
+    """Validate SQL before it is sent to the database."""
+    settings = get_settings()
+
+    parsed_result = _parse_query(sql)
+
+    if isinstance(parsed_result, str):
+        return invalid_result(parsed_result)
+
+    statement = parsed_result
+
+    operation_error = _find_prohibited_operation(statement)
+
+    if operation_error is not None:
+        return invalid_result(operation_error)
+
+    function_error = _find_prohibited_function(statement)
+
+    if function_error is not None:
+        return invalid_result(function_error)
+
+    referenced_tables, table_error = _get_referenced_tables(statement)
+
+    if table_error is not None:
+        return invalid_result(table_error)
+
+    limit_error = _validate_limit(
+        statement,
+        settings.max_result_rows,
+    )
+
+    if limit_error is not None:
         return invalid_result(
-            "invalid_limit",
-            referenced_tables=sorted_tables,
+            limit_error,
+            referenced_tables=referenced_tables,
         )
 
-    if limit_value > settings.max_result_rows:
-        return invalid_result(
-            f"limit_exceeds_{settings.max_result_rows}",
-            referenced_tables=sorted_tables,
-        )
+    normalized_sql = statement.sql(
+        dialect="postgres",
+        pretty=True,
+    )
 
     return SQLValidationResult(
         is_safe=True,
-        normalized_sql=statement.sql(
-            dialect="postgres",
-            pretty=True,
-        ),
-        referenced_tables=sorted_tables,
+        normalized_sql=normalized_sql,
+        referenced_tables=referenced_tables,
         checks=(
             "single_statement",
             "select_only",

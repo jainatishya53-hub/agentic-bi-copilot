@@ -17,6 +17,7 @@ TABLE_DESCRIPTIONS = {
     "monthly_targets": "Monthly revenue target for each region.",
 }
 
+
 BUSINESS_RULES = (
     "Revenue equals SUM(order_items.quantity * order_items.unit_price).",
     "Only orders with status = 'completed' count toward revenue.",
@@ -28,6 +29,8 @@ BUSINESS_RULES = (
 
 @dataclass(frozen=True, slots=True)
 class ColumnSchema:
+    """Describe one database column."""
+
     name: str
     data_type: str
     nullable: bool
@@ -36,6 +39,8 @@ class ColumnSchema:
 
 @dataclass(frozen=True, slots=True)
 class TableSchema:
+    """Describe one allowed database table."""
+
     name: str
     description: str
     columns: tuple[ColumnSchema, ...]
@@ -43,6 +48,8 @@ class TableSchema:
 
 @dataclass(frozen=True, slots=True)
 class TableRelationship:
+    """Describe a foreign-key relationship between two tables."""
+
     source_table: str
     source_column: str
     target_table: str
@@ -50,20 +57,62 @@ class TableRelationship:
 
 
 def get_inspector() -> Inspector:
+    """Create a SQLAlchemy database inspector."""
     return inspect(get_engine())
 
 
 def list_tables() -> tuple[str, ...]:
+    """Return the allowed tables that exist in the database."""
     inspector = get_inspector()
-    database_tables = set(
-        inspector.get_table_names(schema="public")
+    database_tables = set(inspector.get_table_names(schema="public"))
+
+    allowed_database_tables = database_tables & ALLOWED_TABLES
+    return tuple(sorted(allowed_database_tables))
+
+
+def _normalize_table_name(table_name: str) -> str:
+    """Clean a table name before checking it."""
+    return table_name.strip().lower()
+
+
+def _get_primary_key_columns(
+    inspector: Inspector,
+    table_name: str,
+) -> set[str]:
+    """Return the primary-key columns for a table."""
+    primary_key = inspector.get_pk_constraint(
+        table_name,
+        schema="public",
     )
 
-    return tuple(sorted(database_tables & ALLOWED_TABLES))
+    return set(primary_key.get("constrained_columns") or ())
+
+
+def _get_columns(
+    inspector: Inspector,
+    table_name: str,
+    primary_key_columns: set[str],
+) -> tuple[ColumnSchema, ...]:
+    """Build the column descriptions for a table."""
+    database_columns = inspector.get_columns(
+        table_name,
+        schema="public",
+    )
+
+    return tuple(
+        ColumnSchema(
+            name=column["name"],
+            data_type=str(column["type"]),
+            nullable=bool(column["nullable"]),
+            primary_key=column["name"] in primary_key_columns,
+        )
+        for column in database_columns
+    )
 
 
 def get_table_schema(table_name: str) -> TableSchema:
-    normalized_name = table_name.strip().lower()
+    """Return the schema of one allowed table."""
+    normalized_name = _normalize_table_name(table_name)
 
     if normalized_name not in ALLOWED_TABLES:
         raise ValueError(f"Table is not allowed: {table_name}")
@@ -72,25 +121,14 @@ def get_table_schema(table_name: str) -> TableSchema:
         raise ValueError(f"Table does not exist: {table_name}")
 
     inspector = get_inspector()
-    primary_key = inspector.get_pk_constraint(
+    primary_key_columns = _get_primary_key_columns(
+        inspector,
         normalized_name,
-        schema="public",
     )
-    primary_key_columns = set(
-        primary_key.get("constrained_columns") or ()
-    )
-
-    columns = tuple(
-        ColumnSchema(
-            name=column["name"],
-            data_type=str(column["type"]),
-            nullable=bool(column["nullable"]),
-            primary_key=column["name"] in primary_key_columns,
-        )
-        for column in inspector.get_columns(
-            normalized_name,
-            schema="public",
-        )
+    columns = _get_columns(
+        inspector,
+        normalized_name,
+        primary_key_columns,
     )
 
     return TableSchema(
@@ -101,6 +139,7 @@ def get_table_schema(table_name: str) -> TableSchema:
 
 
 def get_table_relationships() -> tuple[TableRelationship, ...]:
+    """Return relationships between allowed tables."""
     inspector = get_inspector()
     relationships: list[TableRelationship] = []
 
@@ -123,14 +162,13 @@ def get_table_relationships() -> tuple[TableRelationship, ...]:
                 source_columns,
                 target_columns,
             ):
-                relationships.append(
-                    TableRelationship(
-                        source_table=source_table,
-                        source_column=source_column,
-                        target_table=target_table,
-                        target_column=target_column,
-                    )
+                relationship = TableRelationship(
+                    source_table=source_table,
+                    source_column=source_column,
+                    target_table=target_table,
+                    target_column=target_column,
                 )
+                relationships.append(relationship)
 
     return tuple(
         sorted(
@@ -143,24 +181,84 @@ def get_table_relationships() -> tuple[TableRelationship, ...]:
     )
 
 
-def build_schema_context(
-    selected_tables: tuple[str, ...] | None = None,
-) -> str:
-    available_tables = set(list_tables())
-
+def _select_tables(
+    selected_tables: tuple[str, ...] | None,
+    available_tables: set[str],
+) -> set[str]:
+    """Choose and validate the tables used in the schema context."""
     if selected_tables is None:
-        requested_tables = available_tables
-    else:
-        requested_tables = {
-            table.strip().lower()
-            for table in selected_tables
-        }
+        return available_tables
+
+    requested_tables = {_normalize_table_name(table) for table in selected_tables}
 
     unknown_tables = requested_tables - available_tables
 
     if unknown_tables:
         names = ", ".join(sorted(unknown_tables))
         raise ValueError(f"Unknown or disallowed tables: {names}")
+
+    return requested_tables
+
+
+def _format_column(column: ColumnSchema) -> str:
+    """Format one column for the text schema context."""
+    attributes: list[str] = []
+
+    if column.primary_key:
+        attributes.append("primary key")
+
+    if not column.nullable:
+        attributes.append("not null")
+
+    suffix = ""
+
+    if attributes:
+        suffix = f" ({', '.join(attributes)})"
+
+    return f"- {column.name}: {column.data_type}{suffix}"
+
+
+def _add_table_details(
+    lines: list[str],
+    requested_tables: set[str],
+) -> None:
+    """Add table and column details to the context."""
+    for table_name in sorted(requested_tables):
+        table_schema = get_table_schema(table_name)
+
+        lines.append(f"{table_schema.name}: {table_schema.description}")
+
+        for column in table_schema.columns:
+            lines.append(_format_column(column))
+
+
+def _add_relationships(
+    lines: list[str],
+    requested_tables: set[str],
+) -> None:
+    """Add relationships between the selected tables."""
+    for relationship in get_table_relationships():
+        source_is_selected = relationship.source_table in requested_tables
+        target_is_selected = relationship.target_table in requested_tables
+
+        if source_is_selected and target_is_selected:
+            lines.append(
+                f"- {relationship.source_table}."
+                f"{relationship.source_column} -> "
+                f"{relationship.target_table}."
+                f"{relationship.target_column}"
+            )
+
+
+def build_schema_context(
+    selected_tables: tuple[str, ...] | None = None,
+) -> str:
+    """Build the database information given to the language model."""
+    available_tables = set(list_tables())
+    requested_tables = _select_tables(
+        selected_tables,
+        available_tables,
+    )
 
     lines = [
         "Database dialect: PostgreSQL",
@@ -171,42 +269,9 @@ def build_schema_context(
     lines.extend(f"- {rule}" for rule in BUSINESS_RULES)
     lines.extend(("", "Tables:"))
 
-    for table_name in sorted(requested_tables):
-        table_schema = get_table_schema(table_name)
-        lines.append(
-            f"{table_schema.name}: {table_schema.description}"
-        )
-
-        for column in table_schema.columns:
-            attributes: list[str] = []
-
-            if column.primary_key:
-                attributes.append("primary key")
-            if not column.nullable:
-                attributes.append("not null")
-
-            suffix = (
-                f" ({', '.join(attributes)})"
-                if attributes
-                else ""
-            )
-
-            lines.append(
-                f"- {column.name}: {column.data_type}{suffix}"
-            )
+    _add_table_details(lines, requested_tables)
 
     lines.extend(("", "Relationships:"))
-
-    for relationship in get_table_relationships():
-        if (
-            relationship.source_table in requested_tables
-            and relationship.target_table in requested_tables
-        ):
-            lines.append(
-                f"- {relationship.source_table}."
-                f"{relationship.source_column} -> "
-                f"{relationship.target_table}."
-                f"{relationship.target_column}"
-            )
+    _add_relationships(lines, requested_tables)
 
     return "\n".join(lines)

@@ -70,37 +70,84 @@ month_over_month_change_pct, unusual_decline.
 
 @lru_cache
 def get_openai_client() -> OpenAI:
+    """Create and reuse the OpenAI client."""
     settings = get_settings()
-    return OpenAI(api_key=settings.openai_api_key)
+
+    return OpenAI(
+        api_key=settings.openai_api_key,
+    )
+
+
+def _clean_question(question: str) -> str:
+    """Remove extra spacing and reject an empty question."""
+    cleaned_question = question.strip()
+
+    if not cleaned_question:
+        raise ValueError("Question cannot be empty.")
+
+    return cleaned_question
+
+
+def _build_messages(
+    system_prompt: str,
+    user_prompt: str,
+) -> list[dict[str, str]]:
+    """Build the system and user messages sent to the model."""
+    return [
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ]
+
+
+def _build_planner_prompt(
+    question: str,
+    schema_context: str,
+) -> str:
+    """Build the user prompt for analysis planning."""
+    return f"Business question:\n{question}\n\nDatabase context:\n{schema_context}"
+
+
+def _build_sql_prompt(
+    question: str,
+    plan: AnalysisPlan,
+    schema_context: str,
+) -> str:
+    """Build the user prompt for SQL generation."""
+    return (
+        f"Business question:\n{question}\n\n"
+        f"Approved analysis plan:\n"
+        f"{plan.model_dump_json(indent=2)}\n\n"
+        f"Database context:\n{schema_context}"
+    )
 
 
 def create_analysis_plan(
     question: str,
     schema_context: str,
 ) -> AnalysisPlan:
-    cleaned_question = question.strip()
-
-    if not cleaned_question:
-        raise ValueError("Question cannot be empty.")
-
+    """Ask the model to create a structured analysis plan."""
+    cleaned_question = _clean_question(question)
     settings = get_settings()
     client = get_openai_client()
 
+    user_prompt = _build_planner_prompt(
+        cleaned_question,
+        schema_context,
+    )
+    messages = _build_messages(
+        PLANNER_SYSTEM_PROMPT,
+        user_prompt,
+    )
+
     response = client.responses.parse(
         model=settings.model_name,
-        input=[
-            {
-                "role": "system",
-                "content": PLANNER_SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Business question:\n{cleaned_question}\n\n"
-                    f"Database context:\n{schema_context}"
-                ),
-            },
-        ],
+        input=messages,
         text_format=AnalysisPlan,
     )
 
@@ -117,10 +164,8 @@ def generate_sql(
     plan: AnalysisPlan,
     schema_context: str,
 ) -> SQLDraft:
-    cleaned_question = question.strip()
-
-    if not cleaned_question:
-        raise ValueError("Question cannot be empty.")
+    """Ask the model to create a structured SQL draft."""
+    cleaned_question = _clean_question(question)
 
     if plan.needs_clarification:
         raise ValueError(
@@ -130,23 +175,19 @@ def generate_sql(
     settings = get_settings()
     client = get_openai_client()
 
+    user_prompt = _build_sql_prompt(
+        cleaned_question,
+        plan,
+        schema_context,
+    )
+    messages = _build_messages(
+        SQL_GENERATOR_SYSTEM_PROMPT,
+        user_prompt,
+    )
+
     response = client.responses.parse(
         model=settings.model_name,
-        input=[
-            {
-                "role": "system",
-                "content": SQL_GENERATOR_SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Business question:\n{cleaned_question}\n\n"
-                    f"Approved analysis plan:\n"
-                    f"{plan.model_dump_json(indent=2)}\n\n"
-                    f"Database context:\n{schema_context}"
-                ),
-            },
-        ],
+        input=messages,
         text_format=SQLDraft,
     )
 

@@ -1,102 +1,117 @@
 # Agentic Analytics and Business Intelligence Copilot
 
-A safe, human-approved analytics copilot that converts a business question into an analysis plan, generates read-only PostgreSQL, validates it, pauses for approval, executes it, detects unusual trends, and presents the result through an interactive Streamlit interface.
+A local business intelligence application that turns a business question into a safe, reviewable database analysis.
 
-The primary supported question is:
+The application can:
+
+1. Understand a business question.
+2. Inspect the allowed database tables.
+3. Create an analysis plan.
+4. Generate PostgreSQL.
+5. Check the SQL for unsafe operations.
+6. Pause and ask the user for approval.
+7. Execute the query using a read-only database account.
+8. Analyze the returned data.
+9. Display an answer, findings, chart, and query details.
+
+The main supported question is:
 
 > Compare revenue across regions for the last six complete months, identify unusual declines, and generate a suitable chart.
 
-## Demo outcome
+## Demo result
 
-For the deterministic retail dataset, the application produces:
+The project uses a fixed retail dataset, so the main result is repeatable.
 
-- Analysis period: February 2026 through July 2026
-- Highest-revenue region: North
-- North revenue: $323,068.40
-- Query result: 24 regional monthly rows
-- Unusual decline rule: month-over-month revenue change below -25%
-- Unusual declines:
-  - West, March 2026: -25.82%
-  - South, May 2026: -54.82%
-  - West, July 2026: -72.12%
+| Result | Value |
+|---|---|
+| Analysis period | February 2026 to July 2026 |
+| Highest-revenue region | North |
+| North revenue | $323,068.40 |
+| Returned rows | 24 |
+| Agent decline threshold | More than 25% month-over-month decline |
 
-The result is repeatable because the database uses a fixed seed and a fixed data-as-of date of July 31, 2026.
+The unusual declines are:
 
-## Key capabilities
+| Region | Month | Revenue change |
+|---|---|---:|
+| West | March 2026 | -25.82% |
+| South | May 2026 | -54.82% |
+| West | July 2026 | -72.12% |
 
-- Natural-language analytical question input
-- Restricted PostgreSQL schema discovery
-- Structured LLM analysis planning
-- Structured LLM SQL generation
-- SQL parsing and validation with SQLGlot
-- Human approval before query execution
-- Read-only PostgreSQL application role
-- Transaction-level read-only enforcement
-- Five-second statement timeout
+The dataset ends on July 31, 2026. January 2026 is loaded as a lookback month so the application can calculate the February change correctly.
+
+## Main features
+
+- Natural-language business question
+- Restricted database schema discovery
+- Structured analysis planning
+- Structured SQL generation
+- SQL validation with SQLGlot
+- Human approval before execution
+- Read-only PostgreSQL user
+- Read-only database transaction
+- Five-second query timeout
 - Maximum result size of 500 rows
-- Deterministic revenue and decline analysis
+- Revenue and decline analysis
 - Interactive Plotly chart
-- Business-language explanation
-- Three suggested follow-up questions
+- Business summary
+- Suggested follow-up questions
 - FastAPI backend
-- Streamlit frontend
-- LangGraph workflow with interruption and resumption
+- Streamlit interface
+- LangGraph workflow
 - Optional LangSmith tracing
-- Unit and integration test coverage
+- Unit and integration tests
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["Business user"] --> UI["Streamlit interface"]
-    UI --> API["FastAPI API"]
-    API --> G["LangGraph workflow"]
+    USER["Business user"] --> UI["Streamlit interface"]
+    UI --> API["FastAPI backend"]
+    API --> GRAPH["LangGraph workflow"]
 
-    G --> SC["Restricted schema service"]
-    G --> LLM["OpenAI structured outputs"]
-    G --> V["SQLGlot validator"]
-    G --> H{"Human approval"}
+    GRAPH --> SCHEMA["Restricted schema service"]
+    GRAPH --> MODEL["OpenAI structured output"]
+    GRAPH --> VALIDATOR["SQLGlot validator"]
+    VALIDATOR --> APPROVAL{"Human approval"}
 
-    H -->|"Reject"| STOP["Stop without execution"]
-    H -->|"Approve"| Q["Read-only query service"]
+    APPROVAL -->|"Reject"| STOP["Stop without execution"]
+    APPROVAL -->|"Approve"| QUERY["Read-only query service"]
 
-    Q --> DB[("PostgreSQL")]
-    Q --> A["Deterministic analysis"]
-    A --> C["Plotly chart"]
-    A --> R["Grounded business answer"]
+    QUERY --> DB[("PostgreSQL")]
+    QUERY --> ANALYSIS["Revenue analysis"]
+    ANALYSIS --> CHART["Plotly chart"]
+    ANALYSIS --> ANSWER["Business answer"]
 
-    C --> API
-    R --> API
+    CHART --> API
+    ANSWER --> API
     API --> UI
-
-    G -. "Optional traces" .-> LS["LangSmith"]
 ```
 
-## Runtime workflow
+## Agent workflow
 
 ```mermaid
 flowchart TD
-    Q["Business question"] --> S["Retrieve allowed schema"]
-    S --> P["Create structured analysis plan"]
-    P --> SQL["Generate PostgreSQL"]
-    SQL --> V{"SQL passes validation?"}
+    QUESTION["Business question"] --> SCHEMA["Load allowed schema"]
+    SCHEMA --> PLAN["Create analysis plan"]
+    PLAN --> SQL["Generate PostgreSQL"]
+    SQL --> CHECK{"SQL is safe?"}
 
-    V -->|"No"| F["Return a safe failure"]
-    V -->|"Yes"| A{"Human approves SQL?"}
+    CHECK -->|"No"| FAILED["Stop with validation error"]
+    CHECK -->|"Yes"| REVIEW{"User approves SQL?"}
 
-    A -->|"No"| X["Stop without querying database"]
-    A -->|"Yes"| E["Execute as bi_reader"]
+    REVIEW -->|"No"| REJECTED["Stop without querying database"]
+    REVIEW -->|"Yes"| EXECUTE["Execute as bi_reader"]
 
-    E --> D["Return rows and execution metadata"]
-    D --> N["Calculate deterministic findings"]
-    N --> C["Create Plotly chart"]
-    C --> B["Create grounded business answer"]
-    B --> O["Display answer, findings, chart, data, and details"]
+    EXECUTE --> ROWS["Return rows"]
+    ROWS --> ANALYZE["Calculate findings"]
+    ANALYZE --> VISUALIZE["Create chart"]
+    VISUALIZE --> RESULT["Display final result"]
 ```
 
-The SQL is generated before approval, but it is not executed until the user explicitly selects **Approve and execute**.
+The model generates SQL before approval, but the SQL is not executed until the user selects **Approve and execute**.
 
-## Data model
+## Database model
 
 ```mermaid
 erDiagram
@@ -151,92 +166,98 @@ erDiagram
 
 ## Business rules
 
-Revenue is defined consistently as:
+Revenue is calculated as:
 
 ```text
 SUM(order_items.quantity * order_items.unit_price)
 ```
 
-Additional rules:
+The main rules are:
 
-- Only orders with `status = 'completed'` count toward revenue.
+- Only completed orders count toward revenue.
 - The dataset ends on July 31, 2026.
-- The last six complete months are February through July 2026.
-- January 2026 is included internally as a lookback month so that February’s month-over-month change can be calculated.
-- An unusual decline is a month-over-month revenue change below -25%.
+- The requested six-month period is February through July 2026.
+- January 2026 is used only to calculate February’s previous-month value.
+- The agent treats a decline greater than 25% as unusual.
+- The deterministic manual reference pipeline uses its original 20% threshold.
+- Percentage changes are rounded to two decimal places.
 
-## Security design
+## Security
 
-The application uses defense in depth. Prompt instructions are not treated as a security boundary.
+The project uses several safety layers. It does not depend only on the model prompt.
 
-| Layer | Protection |
+| Safety layer | Purpose |
 |---|---|
-| Schema service | Exposes only approved retail tables and relationships |
-| Structured LLM output | Requires SQL and planning responses to match Pydantic schemas |
-| SQLGlot validator | Parses SQL and rejects unsafe syntax |
-| Statement policy | Allows one read-only statement |
-| Operation policy | Rejects writes, DDL, and prohibited operations |
-| Table policy | Rejects tables outside the allowlist |
-| Schema policy | Rejects unauthorized schemas such as `pg_catalog` |
-| Function policy | Rejects prohibited functions such as `pg_sleep` |
-| Row policy | Requires a result limit no greater than 500 |
-| Database role | Connects as `bi_reader`, not the administrator |
-| Transaction policy | Executes inside a read-only transaction |
-| Timeout policy | Cancels statements after five seconds |
-| Human approval | Requires explicit approval before execution |
+| Restricted schema service | Shows the model only approved tables and columns |
+| Pydantic models | Require structured plans and SQL drafts |
+| SQLGlot parser | Parses SQL before execution |
+| Single-statement rule | Rejects multiple SQL statements |
+| Read-only rule | Rejects writes and database changes |
+| Table allowlist | Rejects unknown tables |
+| Schema allowlist | Rejects unauthorized schemas |
+| Function blocklist | Rejects dangerous functions such as `pg_sleep` |
+| Required limit | Requires `LIMIT 500` or less |
+| Human approval | Requires the user to approve SQL |
+| `bi_reader` role | Prevents database writes |
+| Read-only transaction | Adds another database-level write restriction |
+| Statement timeout | Stops queries after five seconds |
 
-A rejected query never reaches the database execution node.
+A rejected or unsafe query never reaches the query execution step.
 
 ## Technology stack
 
-- Python 3.11
-- uv
-- FastAPI
-- Streamlit
-- LangGraph
-- OpenAI Responses API with structured outputs
-- PostgreSQL 16
-- SQLAlchemy
-- psycopg
-- SQLGlot
-- Pandas
-- Plotly
-- Pydantic
-- Pytest
-- Ruff
-- Docker Compose
-- Optional LangSmith tracing
+| Technology | Role |
+|---|---|
+| Python 3.11 | Main programming language |
+| uv | Dependency and virtual-environment management |
+| FastAPI | Backend API |
+| Streamlit | User interface |
+| LangGraph | Agent workflow and approval interruption |
+| OpenAI Responses API | Structured planning and SQL generation |
+| PostgreSQL 16 | Retail database |
+| SQLAlchemy | Database connections and models |
+| psycopg | PostgreSQL driver |
+| SQLGlot | SQL parsing and safety validation |
+| Pydantic | Request, response, and model-output validation |
+| Pandas | Table and chart-data preparation |
+| Plotly | Interactive charts |
+| Faker | Synthetic retail data |
+| Pytest | Automated tests |
+| Ruff | Formatting and code-quality checks |
+| Docker Compose | Local PostgreSQL management |
+| LangSmith | Optional workflow tracing |
 
-## Repository structure
+## Project structure
 
 ```text
 agentic-bi-copilot/
-├── src/agentic_bi_copilot/
-│   ├── agent/
-│   │   ├── graph.py
-│   │   ├── nodes.py
-│   │   └── state.py
-│   ├── api/
-│   │   ├── main.py
-│   │   └── routes.py
-│   ├── database/
-│   │   ├── connection.py
-│   │   ├── models.py
-│   │   ├── query_service.py
-│   │   └── schema_service.py
-│   ├── security/
-│   │   └── sql_validator.py
-│   ├── services/
-│   │   ├── analysis.py
-│   │   ├── charts.py
-│   │   ├── llm.py
-│   │   └── manual_pipeline.py
-│   ├── config.py
-│   └── schemas.py
 ├── scripts/
 │   ├── init_database.sql
 │   ├── run_agent_demo.py
 │   └── seed_database.py
+├── src/
+│   └── agentic_bi_copilot/
+│       ├── agent/
+│       │   ├── graph.py
+│       │   ├── nodes.py
+│       │   └── state.py
+│       ├── api/
+│       │   ├── main.py
+│       │   └── routes.py
+│       ├── database/
+│       │   ├── connection.py
+│       │   ├── models.py
+│       │   ├── query_service.py
+│       │   └── schema_service.py
+│       ├── security/
+│       │   └── sql_validator.py
+│       ├── services/
+│       │   ├── analysis.py
+│       │   ├── charts.py
+│       │   ├── llm.py
+│       │   └── manual_pipeline.py
+│       ├── config.py
+│       └── schemas.py
 ├── tests/
 │   ├── evaluation/
 │   ├── integration/
@@ -250,16 +271,16 @@ agentic-bi-copilot/
 └── README.md
 ```
 
-## Prerequisites
+## Requirements
 
-Install:
+Install these tools before starting:
 
 - Python 3.11
 - uv
 - Git
 - Docker Desktop
 
-Verify them:
+Check that they are installed:
 
 ```bash
 python3 --version
@@ -268,23 +289,29 @@ git --version
 docker --version
 ```
 
-## Local setup
+These commands print the installed versions.
 
-### 1. Enter the repository
+## Setup
+
+### 1. Open the project folder
 
 ```bash
 cd ~/Documents/agentic-bi-copilot
 ```
 
-This makes the repository the current working directory.
+This makes the project folder your current terminal location.
 
-### 2. Install the locked dependencies
+### 2. Install the project
 
 ```bash
 uv sync
 ```
 
-This creates or updates `.venv` and installs the exact project dependencies recorded in `uv.lock`.
+This command:
+
+- Creates `.venv` if needed.
+- Installs the project.
+- Installs the dependencies recorded in `uv.lock`.
 
 ### 3. Create the local environment file
 
@@ -292,15 +319,16 @@ This creates or updates `.venv` and installs the exact project dependencies reco
 cp .env.example .env
 ```
 
-This creates a private configuration file from the safe template.
+This copies the safe example configuration into a private local file.
 
-Add a valid OpenAI API key to `.env`:
+Open `.env` and provide:
 
 ```text
-OPENAI_API_KEY=your-api-key
+OPENAI_API_KEY=your-private-api-key
+MODEL_NAME=your-model-name
 ```
 
-Never commit `.env` or paste its contents into terminal output, documentation, screenshots, or chat messages.
+Do not commit `.env`. Do not paste its contents into documentation, screenshots, terminal output, or chat messages.
 
 Confirm that Git ignores it:
 
@@ -308,31 +336,33 @@ Confirm that Git ignores it:
 git check-ignore -v .env
 ```
 
+This should show that `.env` is excluded by `.gitignore`.
+
 ### 4. Start PostgreSQL
 
 ```bash
 docker compose up -d postgres
 ```
 
-This starts the local PostgreSQL 16 container in the background.
+This starts PostgreSQL in the background.
 
-Verify its health:
+Check its status:
 
 ```bash
 docker compose ps
 ```
 
-The `agentic-bi-postgres` container should report `healthy`.
+Wait until `agentic-bi-postgres` reports `healthy`.
 
-### 5. Seed the deterministic dataset
+### 5. Create the retail dataset
 
 ```bash
 uv run python scripts/seed_database.py
 ```
 
-This recreates and populates the six retail tables using a fixed random seed.
+This recreates and fills the six retail tables using a fixed random seed.
 
-Expected approximate counts:
+Expected row counts:
 
 | Table | Rows |
 |---|---:|
@@ -343,11 +373,13 @@ Expected approximate counts:
 | order_items | 12,752 |
 | monthly_targets | 96 |
 
-## Running the application
+The seed script recreates these local tables. Do not run it against a database containing important data.
 
-The API and UI run in separate terminals.
+## Run the application
 
-### Terminal A: start FastAPI
+The backend and interface run in separate terminals.
+
+### Terminal 1: start FastAPI
 
 ```bash
 uv run uvicorn agentic_bi_copilot.api.main:app \
@@ -355,14 +387,20 @@ uv run uvicorn agentic_bi_copilot.api.main:app \
   --port 8000
 ```
 
-The API is available at:
+This starts the backend at:
 
-- Health endpoint: <http://127.0.0.1:8000/health>
-- Interactive API documentation: <http://127.0.0.1:8000/docs>
+```text
+http://127.0.0.1:8000
+```
 
-Do not use automatic reload between SQL generation and approval. The MVP stores active LangGraph runs in memory, so restarting the API invalidates pending runs.
+Useful pages:
 
-### Terminal B: start Streamlit
+- Health check: <http://127.0.0.1:8000/health>
+- API documentation: <http://127.0.0.1:8000/docs>
+
+Do not use automatic reload while a run is waiting for approval. Pending runs are stored in memory, so restarting the API removes them.
+
+### Terminal 2: start Streamlit
 
 ```bash
 uv run streamlit run ui/streamlit_app.py \
@@ -370,27 +408,20 @@ uv run streamlit run ui/streamlit_app.py \
   --server.port 8501
 ```
 
-Open:
+This starts the interface at:
 
 <http://127.0.0.1:8501>
 
-## Using the interface
+## Use the interface
 
-1. Enter the primary business question.
+1. Enter the business question.
 2. Select **Generate analysis plan and SQL**.
-3. Review the interpreted question, plan, assumptions, tables, validation checks, and SQL.
-4. Select **Approve and execute** to run the read-only query.
-5. Alternatively, select **Reject SQL** to stop without execution.
-6. Review:
-   - Business answer
-   - Revenue metrics
-   - Unusual declines
-   - Suggested follow-up questions
-   - Interactive chart
-   - Query-result table
-   - Analysis plan
-   - SQL safety checks
-   - Executed SQL
+3. Review the analysis plan.
+4. Review the referenced tables.
+5. Review the SQL safety checks.
+6. Read the generated SQL.
+7. Select **Approve and execute** or **Reject SQL**.
+8. If approved, review the answer, metrics, findings, chart, data, and audit details.
 
 ## Command-line demonstration
 
@@ -400,32 +431,35 @@ Run:
 uv run python scripts/run_agent_demo.py
 ```
 
-The script:
+This script:
 
-1. Starts the LangGraph workflow.
-2. Displays the generated SQL and safety result.
-3. Pauses for approval.
-4. Executes only after the user enters `APPROVE`.
-5. Prints the business answer and unusual declines.
+1. Starts the agent workflow.
+2. Displays the analysis question.
+3. Displays the SQL and its safety result.
+4. Waits for approval.
+5. Executes only when you type `APPROVE`.
+6. Prints the result and unusual declines.
 
-The installed helper command prints application startup instructions:
+You can also run:
 
 ```bash
 uv run agentic-bi-copilot
 ```
 
+This prints the commands used to start the API and interface.
+
 ## API endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/health` | Check backend availability |
-| `POST` | `/api/v1/manual-query` | Run the deterministic reference pipeline |
-| `POST` | `/api/v1/agent/runs` | Start an agent run and prepare an approval request |
+| `GET` | `/health` | Check whether the backend is running |
+| `POST` | `/api/v1/manual-query` | Run the deterministic reference analysis |
+| `POST` | `/api/v1/agent/runs` | Generate a plan and SQL approval request |
 | `POST` | `/api/v1/agent/runs/{thread_id}/decision` | Approve or reject a pending run |
 
 ### Start an agent run
 
-Request:
+Example request:
 
 ```json
 {
@@ -433,19 +467,17 @@ Request:
 }
 ```
 
-The response contains:
+The response includes:
 
-- Thread identifier
-- Structured analysis plan
+- Thread ID
+- Analysis plan
 - Generated SQL
 - SQL explanation
 - Referenced tables
-- Validation checks
+- Safety checks
 - Approval status
 
-### Resume an agent run
-
-Approval request:
+### Approve a run
 
 ```json
 {
@@ -454,7 +486,7 @@ Approval request:
 }
 ```
 
-Rejection request:
+### Reject a run
 
 ```json
 {
@@ -465,13 +497,15 @@ Rejection request:
 
 ## Testing
 
-PostgreSQL must be running before executing the complete test suite.
+PostgreSQL must be healthy before running all integration tests.
 
-Run code-quality checks:
+Check the code:
 
 ```bash
 uv run ruff check .
 ```
+
+This checks imports, style, and common code problems.
 
 Run all tests:
 
@@ -479,63 +513,62 @@ Run all tests:
 uv run pytest -v
 ```
 
+This runs the unit and integration tests.
+
 Check whitespace:
 
 ```bash
 git diff --check
 ```
 
-Current verified result:
+This reports trailing spaces and other whitespace problems.
 
-```text
-63 passed
-```
+The project contains 63 tests covering:
 
-The suite covers:
-
-- API health
-- Database connectivity
-- Read-only role enforcement
+- Health endpoint
+- Database connection
+- Read-only database role
 - Query execution
-- Result row limits
-- Schema restrictions
-- SQL parsing and normalization
+- Query row limits
+- Schema discovery
+- SQL validation
 - Unsafe SQL rejection
-- Prohibited functions
-- Agent planning
-- SQL generation
+- Analysis calculations
+- Chart generation
+- Structured LLM planning
+- Structured SQL generation
 - Human approval
-- Rejection routing
-- Approved execution
-- Deterministic analysis
-- Plotly chart generation
+- Query rejection
+- Agent routing
+- Agent API
 - Follow-up questions
-- Resumable agent API behavior
 
-## Evaluation strategy
+## SQL evaluation
 
-The trusted SQL reference is stored at:
+The trusted reference query is stored in:
 
 ```text
 tests/evaluation/regional_revenue_last_six_months.sql
 ```
 
-The primary generated SQL is evaluated against this reference using:
+The generated SQL is compared with this query using:
 
-- Safety validation status
-- Referenced-table allowlist
-- Output row count
+- SQL safety result
+- Referenced tables
+- Returned row count
 - Exact returned rows
-- Lookback-period correctness
 - Revenue totals
-- Top-region correctness
-- Unusual-decline correctness
+- Top region
+- Unusual declines
+- January lookback logic
 
-The verified generated query returned an exact 24-row match with the trusted reference result.
+The verified generated query returned the same 24 rows as the reference query.
 
 ## Optional LangSmith tracing
 
-The repository includes LangSmith configuration variables:
+LangSmith tracing is not required to run the application.
+
+The available settings are:
 
 ```text
 LANGSMITH_TRACING=true
@@ -543,69 +576,92 @@ LANGSMITH_API_KEY=
 LANGSMITH_PROJECT=agentic-bi-copilot
 ```
 
-To enable tracing, supply a valid LangSmith key and export the variables before starting the API. Tracing is optional; the local application and tests do not require it.
+To use tracing, add a valid LangSmith key to your private `.env` file.
 
-Never commit LangSmith or OpenAI credentials.
+Never commit an OpenAI or LangSmith API key.
+
+## Why there is no requirements.txt
+
+This project uses:
+
+```text
+pyproject.toml
+uv.lock
+```
+
+`pyproject.toml` lists the project’s direct dependencies.
+
+`uv.lock` records the exact resolved dependency versions.
+
+Together, these files replace the usual `requirements.txt` workflow.
+
+Install everything with:
+
+```bash
+uv sync
+```
 
 ## Known limitations
 
-This is a focused portfolio MVP rather than a production analytics platform.
+This is a focused local MVP.
 
-- The deterministic analysis layer is tailored to regional monthly revenue.
-- General-purpose analytical questions may require additional analysis handlers.
-- Active agent runs use an in-memory LangGraph checkpointer.
-- Pending approval runs are lost when the API process restarts.
-- The API should run as a single process for this local MVP.
-- There is no authentication or authorization UI.
-- There is no tenant isolation.
-- There is no long-term conversation memory.
-- There is no cloud deployment configuration.
-- There is no streaming response or cancellation support.
-- LLM output can vary, although deterministic security and analysis checks remain enforced.
-- Human approval is required for every generated query.
+- The main analysis focuses on regional monthly revenue.
+- Other business questions may require new analysis functions.
+- Agent runs are stored in memory.
+- Pending approvals are lost if the API restarts.
+- The local API should use a single process.
+- The application does not include user authentication.
+- The application does not provide tenant isolation.
+- It does not store long-term conversation history.
+- It does not include cloud deployment configuration.
+- It does not stream model responses.
+- Model-generated plans and SQL may vary.
+- Every generated query requires human approval.
 
-## Future improvements
+## Possible future improvements
 
-- Persistent PostgreSQL or Redis-backed LangGraph checkpoints
-- Multiple supported analysis types
-- A curated question router
-- SQL repair with strictly bounded retries
-- Authentication and role-based access
+- Persistent LangGraph checkpoints
+- More analysis types
+- Business-question routing
+- Bounded SQL repair
+- User authentication
+- Role-based access
 - Conversation history
+- Streaming workflow progress
+- Cost and token reporting
 - Evaluation dashboards
-- Token and cost reporting
-- Streaming progress
 - Cloud deployment
-- MCP database adapters
-- Expanded LangSmith evaluation datasets
+- More evaluation questions
 
-## Stopping the application
+## Stop the application
 
-Stop FastAPI and Streamlit with `Control + C` in their respective terminals.
+Stop FastAPI and Streamlit by pressing `Control + C` in their terminals.
 
-Stop PostgreSQL while preserving its data:
+Stop PostgreSQL while keeping its stored data:
 
 ```bash
 docker compose down
 ```
 
-Start it again later with:
+Start PostgreSQL again later:
 
 ```bash
 docker compose up -d postgres
 ```
 
+To remove the PostgreSQL volume and all local database data, you would need a separate destructive command. That command is intentionally not included here.
+
 ## Project status
 
-Version `0.1.0` is a complete local MVP for the primary regional-revenue analysis workflow.
+Version `0.1.0` is a complete local MVP for the primary regional-revenue workflow.
 
 It demonstrates:
 
-- Agent orchestration
-- Structured LLM outputs
-- Safe SQL generation
-- Human-in-the-loop approval
-- Database least privilege
-- Deterministic analytics
-- Interactive business intelligence
+- Agent workflow design
+- Structured model output
+- SQL safety validation
+- Human approval
+- Read-only database access
+- Deterministic business analysis
+- Interactive charts
 - Automated testing

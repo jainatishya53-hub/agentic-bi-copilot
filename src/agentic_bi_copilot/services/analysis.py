@@ -4,15 +4,30 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+REQUIRED_COLUMNS = {
+    "month",
+    "region",
+    "revenue",
+    "previous_month_revenue",
+}
+
+DECIMAL_ZERO = Decimal(0)
+PERCENTAGE_MULTIPLIER = Decimal(100)
+TWO_DECIMAL_PLACES = Decimal("0.01")
+
 
 @dataclass(frozen=True, slots=True)
 class RegionalRevenue:
+    """Store the total revenue for one region."""
+
     region: str
     revenue: Decimal
 
 
 @dataclass(frozen=True, slots=True)
 class DeclineFinding:
+    """Store information about an unusual revenue decline."""
+
     region: str
     month: date
     revenue: Decimal
@@ -22,6 +37,8 @@ class DeclineFinding:
 
 @dataclass(frozen=True, slots=True)
 class RevenueAnalysis:
+    """Store the completed regional revenue analysis."""
+
     total_revenue: Decimal
     top_region: str
     top_region_revenue: Decimal
@@ -30,10 +47,12 @@ class RevenueAnalysis:
 
 
 def as_decimal(value: Any) -> Decimal:
+    """Convert a value to Decimal without losing precision."""
     return Decimal(str(value))
 
 
 def as_date(value: Any) -> date:
+    """Convert a supported value to a date."""
     if isinstance(value, datetime):
         return value.date()
 
@@ -43,55 +62,110 @@ def as_date(value: Any) -> date:
     return date.fromisoformat(str(value))
 
 
+def _validate_row(
+    row: Mapping[str, Any],
+    row_number: int,
+) -> None:
+    """Check that a query row contains all required columns."""
+    missing_columns = REQUIRED_COLUMNS - row.keys()
+
+    if missing_columns:
+        missing_names = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Row {row_number} is missing columns: {missing_names}")
+
+
+def _calculate_change_percentage(
+    revenue: Decimal,
+    previous_revenue: Decimal,
+) -> Decimal:
+    """Calculate the percentage change between two months."""
+    change = (revenue - previous_revenue) / previous_revenue * PERCENTAGE_MULTIPLIER
+
+    return change.quantize(
+        TWO_DECIMAL_PLACES,
+        rounding=ROUND_HALF_UP,
+    )
+
+
+def _create_regional_summaries(
+    revenue_by_region: dict[str, Decimal],
+) -> tuple[RegionalRevenue, ...]:
+    """Create summaries ordered alphabetically by region."""
+    return tuple(
+        RegionalRevenue(
+            region=region,
+            revenue=revenue,
+        )
+        for region, revenue in sorted(revenue_by_region.items())
+    )
+
+
+def _sort_declines(
+    declines: list[DeclineFinding],
+) -> tuple[DeclineFinding, ...]:
+    """Sort declines from the largest drop to the smallest."""
+    return tuple(
+        sorted(
+            declines,
+            key=lambda finding: (
+                finding.change_pct,
+                finding.region,
+                finding.month,
+            ),
+        )
+    )
+
+
+def _get_top_region(
+    revenue_by_region: dict[str, Decimal],
+) -> tuple[str, Decimal]:
+    """Return the region with the highest total revenue."""
+    ranked_regions = sorted(
+        revenue_by_region.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    return ranked_regions[0]
+
+
 def analyze_regional_revenue(
     rows: Sequence[Mapping[str, Any]],
     decline_threshold: Decimal = Decimal(-20),
 ) -> RevenueAnalysis:
+    """Analyze revenue totals and unusual monthly declines."""
     if not rows:
         raise ValueError("Cannot analyze an empty result.")
-
-    required_columns = {
-        "month",
-        "region",
-        "revenue",
-        "previous_month_revenue",
-    }
 
     revenue_by_region: dict[str, Decimal] = {}
     declines: list[DeclineFinding] = []
 
     for row_number, row in enumerate(rows, start=1):
-        missing_columns = required_columns - row.keys()
-
-        if missing_columns:
-            missing_names = ", ".join(sorted(missing_columns))
-            raise ValueError(
-                f"Row {row_number} is missing columns: {missing_names}"
-            )
+        _validate_row(row, row_number)
 
         region = str(row["region"])
         month = as_date(row["month"])
         revenue = as_decimal(row["revenue"])
         previous_value = row["previous_month_revenue"]
 
-        revenue_by_region[region] = (
-            revenue_by_region.get(region, Decimal(0)) + revenue
+        current_total = revenue_by_region.get(
+            region,
+            DECIMAL_ZERO,
         )
+        revenue_by_region[region] = current_total + revenue
 
+        # A percentage change cannot be calculated without a
+        # non-zero previous-month value.
         if previous_value is None:
             continue
 
         previous_revenue = as_decimal(previous_value)
 
-        if previous_revenue == 0:
+        if previous_revenue == DECIMAL_ZERO:
             continue
 
-        change_pct = (
-            ((revenue - previous_revenue) / previous_revenue)
-            * Decimal(100)
-        ).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_HALF_UP,
+        change_pct = _calculate_change_percentage(
+            revenue,
+            previous_revenue,
         )
 
         if change_pct <= decline_threshold:
@@ -105,37 +179,17 @@ def analyze_regional_revenue(
                 )
             )
 
-    ranked_regions = sorted(
-        revenue_by_region.items(),
-        key=lambda item: (-item[1], item[0]),
-    )
-    top_region, top_region_revenue = ranked_regions[0]
+    top_region, top_region_revenue = _get_top_region(revenue_by_region)
 
-    regional_summaries = tuple(
-        RegionalRevenue(region=region, revenue=revenue)
-        for region, revenue in sorted(revenue_by_region.items())
-    )
-
-    sorted_declines = tuple(
-        sorted(
-            declines,
-            key=lambda finding: (
-                finding.change_pct,
-                finding.region,
-                finding.month,
-            ),
-        )
-    )
+    total_revenue = sum(
+        revenue_by_region.values(),
+        start=DECIMAL_ZERO,
+    ).quantize(TWO_DECIMAL_PLACES)
 
     return RevenueAnalysis(
-        total_revenue=sum(
-            revenue_by_region.values(),
-            start=Decimal(0),
-        ).quantize(Decimal("0.01")),
+        total_revenue=total_revenue,
         top_region=top_region,
-        top_region_revenue=top_region_revenue.quantize(
-            Decimal("0.01")
-        ),
-        revenue_by_region=regional_summaries,
-        unusual_declines=sorted_declines,
+        top_region_revenue=top_region_revenue.quantize(TWO_DECIMAL_PLACES),
+        revenue_by_region=_create_regional_summaries(revenue_by_region),
+        unusual_declines=_sort_declines(declines),
     )
