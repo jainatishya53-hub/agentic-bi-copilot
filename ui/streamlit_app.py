@@ -6,11 +6,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from agentic_bi_copilot.config import get_settings
-
-PRIMARY_QUESTION = (
-    "Compare revenue across regions for the last six complete months, "
-    "identify unusual declines, and generate a suitable chart."
+from agentic_bi_copilot.services.question_catalog import (
+    QUESTION_EXAMPLES,
 )
+
+DEFAULT_QUESTION = QUESTION_EXAMPLES[0].question
 
 settings = get_settings()
 
@@ -241,6 +241,46 @@ def reset_agent_state() -> None:
     st.session_state.pop("agent_decision", None)
 
 
+def initialize_question_state() -> None:
+    """Set the initial question shown in the text area."""
+
+    if "business_question" not in st.session_state:
+        st.session_state["business_question"] = DEFAULT_QUESTION
+
+
+def select_example_question(question: str) -> None:
+    """Place an example question in the editable text area."""
+
+    reset_agent_state()
+    st.session_state["business_question"] = question
+
+
+def render_example_questions(
+    awaiting_approval: bool,
+) -> None:
+    """Display clickable examples without restricting free-form input."""
+
+    st.markdown("#### Try an example")
+    st.caption(
+        "Select an example or write your own question below. "
+        "Selecting an example does not submit it automatically."
+    )
+
+    columns = st.columns(3)
+
+    for index, example in enumerate(QUESTION_EXAMPLES):
+        with columns[index % 3]:
+            st.button(
+                example.title,
+                key=f"example_question_{example.key}",
+                help=example.question,
+                disabled=awaiting_approval,
+                on_click=select_example_question,
+                args=(example.question,),
+                width="stretch",
+            )
+
+
 def format_currency(value: Any) -> str:
     """Format a value as US currency."""
     if value is None:
@@ -404,45 +444,147 @@ def render_analysis_plan(plan: dict[str, Any]) -> None:
                 st.markdown(f"- {assumption}")
 
 
+def is_regional_revenue_analysis(
+    analysis: dict[str, Any],
+) -> bool:
+    """Check whether this is the original regional analysis."""
+
+    required_fields = {
+        "total_revenue",
+        "top_region",
+        "top_region_revenue",
+        "unusual_declines",
+    }
+
+    return required_fields.issubset(analysis)
+
+
+def format_label(value: Any) -> str:
+    """Convert a stored identifier into a readable label."""
+
+    if value is None:
+        return "—"
+
+    return str(value).replace("_", " ").title()
+
+
+def render_result_metrics(
+    query_result: dict[str, Any],
+    analysis: dict[str, Any],
+) -> None:
+    """Display metrics that match the type of analysis."""
+
+    first_column, second_column, third_column, time_column = st.columns(4)
+
+    if is_regional_revenue_analysis(analysis):
+        first_column.metric(
+            "Six-month revenue",
+            format_currency(analysis.get("total_revenue")),
+        )
+        second_column.metric(
+            "Top region",
+            str(analysis.get("top_region", "—")),
+        )
+        third_column.metric(
+            "Top-region revenue",
+            format_currency(analysis.get("top_region_revenue")),
+        )
+    else:
+        first_column.metric(
+            "Rows returned",
+            str(query_result.get("row_count", 0)),
+        )
+        second_column.metric(
+            "Analysis type",
+            format_label(analysis.get("analysis_type")),
+        )
+
+        chart_information = analysis.get("chart", {})
+
+        if isinstance(chart_information, dict):
+            chart_type = chart_information.get("chart_type")
+        else:
+            chart_type = None
+
+        third_column.metric(
+            "Visualization",
+            format_label(chart_type),
+        )
+
+    execution_time = float(
+        query_result.get(
+            "execution_time_ms",
+            0,
+        )
+    )
+
+    time_column.metric(
+        "Database execution",
+        f"{execution_time:.2f} ms",
+    )
+
+
 def render_findings(
     analysis: dict[str, Any],
     result: dict[str, Any],
 ) -> None:
-    """Display unusual declines and follow-up questions."""
-    render_section_heading(
-        "Key findings",
-        "Unusual revenue declines",
-        "Months that crossed the agent's decline threshold.",
-    )
+    """Display findings and suggested follow-up questions."""
 
-    findings = analysis.get(
-        "unusual_declines",
-        [],
-    )
+    if is_regional_revenue_analysis(analysis):
+        render_section_heading(
+            "Key findings",
+            "Unusual revenue declines",
+            "Months that crossed the agent's decline threshold.",
+        )
 
-    if not isinstance(findings, list):
-        findings = []
+        findings = analysis.get(
+            "unusual_declines",
+            [],
+        )
 
-    findings_frame = pd.DataFrame(findings)
+        if not isinstance(findings, list):
+            findings = []
 
-    if findings_frame.empty:
-        st.info("No unusual declines were detected.")
+        findings_frame = pd.DataFrame(findings)
+
+        if findings_frame.empty:
+            st.info("No unusual declines were detected.")
+        else:
+            findings_frame = findings_frame.rename(
+                columns={
+                    "region": "Region",
+                    "month": "Month",
+                    "revenue": "Revenue",
+                    "previous_month_revenue": ("Previous month revenue"),
+                    "change_pct": "Change (%)",
+                }
+            )
+
+            st.dataframe(
+                findings_frame,
+                hide_index=True,
+                width="stretch",
+            )
     else:
-        findings_frame = findings_frame.rename(
-            columns={
-                "region": "Region",
-                "month": "Month",
-                "revenue": "Revenue",
-                "previous_month_revenue": ("Previous month revenue"),
-                "change_pct": "Change (%)",
-            }
+        render_section_heading(
+            "Key findings",
+            "Business findings",
+            "Important observations grounded in the executed query result.",
         )
 
-        st.dataframe(
-            findings_frame,
-            hide_index=True,
-            width="stretch",
+        key_findings = analysis.get(
+            "key_findings",
+            [],
         )
+
+        if isinstance(key_findings, list) and key_findings:
+            for number, finding in enumerate(
+                key_findings,
+                start=1,
+            ):
+                st.markdown(f"{number}. {finding}")
+        else:
+            st.info("No key findings were returned.")
 
     st.markdown("#### Suggested follow-up questions")
 
@@ -468,8 +610,8 @@ def render_chart_and_data(
     """Display the chart and underlying query rows."""
     render_section_heading(
         "Visual analysis",
-        "Regional revenue trend",
-        "Monthly revenue by region with unusual declines highlighted.",
+        "Query result visualization",
+        "A chart or table selected to represent the approved query result.",
     )
 
     chart_spec = result.get("chart")
@@ -588,34 +730,10 @@ def render_completed_result(
             )
         )
 
-    total_column, region_column, revenue_column, time_column = st.columns(4)
-
-    total_column.metric(
-        "Six-month revenue",
-        format_currency(analysis.get("total_revenue")),
-    )
-
-    region_column.metric(
-        "Top region",
-        str(analysis.get("top_region", "—")),
-    )
-
-    revenue_column.metric(
-        "Top-region revenue",
-        format_currency(analysis.get("top_region_revenue")),
-    )
-
-    execution_time = float(
-        query_result.get(
-            "execution_time_ms",
-            0,
+        render_result_metrics(
+            query_result,
+            analysis,
         )
-    )
-
-    time_column.metric(
-        "Database execution",
-        f"{execution_time:.2f} ms",
-    )
 
     findings_tab, chart_tab, details_tab = st.tabs(
         [
@@ -660,7 +778,10 @@ def render_question_form(
     backend_connected: bool,
     awaiting_approval: bool,
 ) -> tuple[bool, str]:
-    """Display the business-question form."""
+    """Display examples and the free-form business-question form."""
+
+    initialize_question_state()
+
     render_section_heading(
         "Start an analysis",
         "What would you like to understand?",
@@ -668,14 +789,17 @@ def render_question_form(
         "draft SQL, and run its safety checks.",
     )
 
+    render_example_questions(awaiting_approval)
+
     with st.form("business_question_form"):
         question = st.text_area(
             "Business question",
-            value=PRIMARY_QUESTION,
+            key="business_question",
             height=125,
             disabled=awaiting_approval,
             help=(
-                "Ask a clear analytical question using the available retail dataset."
+                "Select an example above or enter any analytical "
+                "question that can be answered from the retail dataset."
             ),
         )
 

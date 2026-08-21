@@ -76,6 +76,51 @@ class SQLDraft(BaseModel):
     referenced_tables: list[str]
 
 
+class ChartRecommendation(BaseModel):
+    """Describe the chart that should represent a query result."""
+
+    chart_type: Literal[
+        "line",
+        "bar",
+        "grouped_bar",
+        "table",
+    ]
+    title: str = Field(
+        min_length=3,
+        max_length=120,
+    )
+    x_column: str | None
+    y_column: str | None
+    color_column: str | None
+
+
+class QueryResultAnalysis(BaseModel):
+    """Store a grounded analysis of a completed query."""
+
+    analysis_type: Literal[
+        "time_series",
+        "ranking",
+        "target_comparison",
+        "segment_comparison",
+        "rate_analysis",
+        "contribution_analysis",
+        "general",
+    ]
+    answer: str = Field(
+        min_length=1,
+        max_length=1500,
+    )
+    key_findings: list[str] = Field(
+        min_length=1,
+        max_length=5,
+    )
+    follow_up_questions: list[str] = Field(
+        min_length=1,
+        max_length=3,
+    )
+    chart: ChartRecommendation
+
+
 # Human-approval agent request and response models.
 
 
