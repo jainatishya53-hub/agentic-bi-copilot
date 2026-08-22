@@ -1,14 +1,17 @@
 from functools import lru_cache
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from agentic_bi_copilot.agent import nodes
+from agentic_bi_copilot.agent.persistence import get_postgres_checkpointer
 from agentic_bi_copilot.agent.state import AgentState
 
 
 def route_after_validation(state: AgentState) -> str:
-    """Continue to approval only when the SQL is safe."""
+    """Continue only when the generated SQL passes validation."""
+
     validation = state.get("validation")
 
     if isinstance(validation, dict) and validation.get("is_safe") is True:
@@ -18,58 +21,35 @@ def route_after_validation(state: AgentState) -> str:
 
 
 def route_after_approval(state: AgentState) -> str:
-    """Execute the query only after explicit approval."""
+    """Execute the query only after the user approves it."""
+
     if state.get("approved") is True:
         return "execute_query"
 
     return END
 
 
-def build_agent_graph():
-    """Build and compile the complete agent workflow."""
-    workflow = StateGraph(AgentState)
+def add_workflow_nodes(workflow: StateGraph) -> None:
+    """Add all processing steps to the workflow."""
 
-    # Add each processing step to the graph.
-    workflow.add_node(
-        "discover_schema",
-        nodes.schema_discovery_node,
-    )
-    workflow.add_node(
-        "create_plan",
-        nodes.planning_node,
-    )
-    workflow.add_node(
-        "generate_sql",
-        nodes.sql_generation_node,
-    )
-    workflow.add_node(
-        "validate_sql",
-        nodes.sql_validation_node,
-    )
-    workflow.add_node(
-        "human_approval",
-        nodes.human_approval_node,
-    )
-    workflow.add_node(
-        "execute_query",
-        nodes.query_execution_node,
-    )
-    workflow.add_node(
-        "analyze_results",
-        nodes.analysis_node,
-    )
-    workflow.add_node(
-        "create_chart",
-        nodes.chart_node,
-    )
+    workflow.add_node("discover_schema", nodes.schema_discovery_node)
+    workflow.add_node("create_plan", nodes.planning_node)
+    workflow.add_node("generate_sql", nodes.sql_generation_node)
+    workflow.add_node("validate_sql", nodes.sql_validation_node)
+    workflow.add_node("human_approval", nodes.human_approval_node)
+    workflow.add_node("execute_query", nodes.query_execution_node)
+    workflow.add_node("analyze_results", nodes.analysis_node)
+    workflow.add_node("create_chart", nodes.chart_node)
 
-    # Define the normal processing order.
+
+def connect_workflow_nodes(workflow: StateGraph) -> None:
+    """Define the order in which workflow steps run."""
+
     workflow.add_edge(START, "discover_schema")
     workflow.add_edge("discover_schema", "create_plan")
     workflow.add_edge("create_plan", "generate_sql")
     workflow.add_edge("generate_sql", "validate_sql")
 
-    # Unsafe SQL ends the workflow before approval.
     workflow.add_conditional_edges(
         "validate_sql",
         route_after_validation,
@@ -79,7 +59,6 @@ def build_agent_graph():
         },
     )
 
-    # Rejected SQL ends the workflow before execution.
     workflow.add_conditional_edges(
         "human_approval",
         route_after_approval,
@@ -89,23 +68,30 @@ def build_agent_graph():
         },
     )
 
-    workflow.add_edge(
-        "execute_query",
-        "analyze_results",
-    )
-    workflow.add_edge(
-        "analyze_results",
-        "create_chart",
-    )
+    workflow.add_edge("execute_query", "analyze_results")
+    workflow.add_edge("analyze_results", "create_chart")
     workflow.add_edge("create_chart", END)
 
-    # The checkpointer allows an interrupted workflow to resume.
-    checkpointer = InMemorySaver()
+
+def build_agent_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+):
+    """Build the analytics workflow with the selected checkpointer."""
+
+    workflow = StateGraph(AgentState)
+    add_workflow_nodes(workflow)
+    connect_workflow_nodes(workflow)
+
+    # Unit tests can continue using temporary in-memory state.
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
 
     return workflow.compile(checkpointer=checkpointer)
 
 
 @lru_cache
 def get_agent_graph():
-    """Create and reuse one resumable agent graph."""
-    return build_agent_graph()
+    """Return the application graph with PostgreSQL persistence."""
+
+    checkpointer = get_postgres_checkpointer()
+    return build_agent_graph(checkpointer=checkpointer)
