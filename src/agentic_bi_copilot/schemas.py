@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -175,3 +175,46 @@ class AgentResumeResponse(BaseModel):
     approved: bool
     result: AgentResultResponse | None = None
     error: str | None = None
+
+
+# Run-history, retry, and export response models.
+
+AgentRunStatus = Literal[
+    "awaiting_approval",
+    "completed",
+    "rejected",
+    "failed",
+]
+
+
+class AgentRunSummaryResponse(BaseModel):
+    """Return the main details shown in the run-history list."""
+
+    thread_id: str
+    question: str
+    status: AgentRunStatus
+    source_thread_id: str | None
+    has_result: bool
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentRunHistoryResponse(BaseModel):
+    """Return a collection of recent analysis runs."""
+
+    runs: list[AgentRunSummaryResponse]
+    total: int
+
+
+class AgentRunDetailResponse(AgentRunSummaryResponse):
+    """Return one run with its approval or completed result."""
+
+    result: AgentResultResponse | None
+    approval: AgentApprovalResponse | None = None
+
+
+class AgentRetryResponse(AgentStartResponse):
+    """Return a new run created from an earlier question."""
+
+    source_thread_id: str
