@@ -10,14 +10,18 @@ from agentic_bi_copilot.agent.persistence import (
 )
 from agentic_bi_copilot.api.routes import router
 from agentic_bi_copilot.schemas import HealthResponse
+from agentic_bi_copilot.services.run_history import (
+    setup_run_history_table,
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Manage application startup and shutdown tasks."""
 
-    # Make sure the checkpoint tables are ready before serving requests.
+    # Prepare both LangGraph storage and application history.
     setup_checkpoint_database()
+    setup_run_history_table()
 
     try:
         yield
