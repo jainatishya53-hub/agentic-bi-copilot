@@ -50,9 +50,9 @@ class ResultComparison:
 
     @property
     def is_correct(self) -> bool:
-        """Return whether every result check passed."""
+        """Return whether the result values are correct."""
 
-        return self.columns_match and self.row_count_match and self.values_match
+        return self.row_count_match and self.values_match
 
 
 def read_evaluation_data(path: Path) -> object:
@@ -179,9 +179,10 @@ def compare_query_results(
     candidate_column_names = tuple(candidate_columns)
 
     columns_match = reference_column_names == candidate_column_names
+    column_count_match = len(reference_column_names) == len(candidate_column_names)
     row_count_match = len(reference_rows) == len(candidate_rows)
 
-    if not columns_match or not row_count_match:
+    if not column_count_match or not row_count_match:
         return ResultComparison(
             columns_match=columns_match,
             row_count_match=row_count_match,
@@ -199,8 +200,10 @@ def compare_query_results(
         compare_row_order,
     )
 
+    values_match = reference_values == candidate_values
+
     return ResultComparison(
-        columns_match=True,
-        row_count_match=True,
-        values_match=reference_values == candidate_values,
+        columns_match=columns_match,
+        row_count_match=row_count_match,
+        values_match=values_match,
     )

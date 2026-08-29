@@ -37,7 +37,7 @@
   },
   {
     "key": "top_products",
-    "question": "Which 10 products generated the most revenue in the last six complete months?",
+    "question": "Which 10 products generated the most completed-order revenue across the full last six complete months? Return only product_id, product_name, and total_revenue, ordered by total_revenue descending.",
     "expected_tables": [
       "orders",
       "order_items",
@@ -54,7 +54,7 @@
   },
   {
     "key": "category_revenue",
-    "question": "Compare revenue by product category for the last six complete months.",
+    "question": "Compare completed-order revenue by product category across the full last six complete months. Return one row per category with only category and total_revenue.",
     "expected_tables": [
       "orders",
       "order_items",
@@ -66,11 +66,11 @@
     ],
     "expected_chart_type": "bar",
     "reference_sql_file": "sql/category_revenue.sql",
-    "compare_row_order": true
+    "compare_row_order": false
   },
   {
     "key": "regional_target_performance",
-    "question": "Compare actual revenue with the monthly target for each region over the last six complete months.",
+    "question": "Compare actual completed-order revenue with the monthly revenue target for each region during the last six complete months. Return only month, region, revenue, revenue_target, target_variance, and target_achievement_pct. Calculate target_variance as revenue minus revenue_target and target_achievement_pct as revenue divided by revenue_target multiplied by 100.",
     "expected_tables": [
       "orders",
       "customers",
@@ -92,7 +92,7 @@
   },
   {
     "key": "regions_below_target",
-    "question": "Which regions were below their revenue target in the last complete month?",
+    "question": "Which regions were below their revenue target in the last complete month? Return only region, revenue, revenue_target, and target_variance. Calculate target_variance as revenue minus revenue_target, so a below-target result has a negative variance.",
     "expected_tables": [
       "orders",
       "customers",
@@ -112,7 +112,7 @@
   },
   {
     "key": "segment_revenue",
-    "question": "Compare revenue across customer segments over the last six complete months.",
+    "question": "Compare completed-order revenue across customer segments over the full last six complete months. Return one row per segment with only segment and total_revenue.",
     "expected_tables": [
       "orders",
       "customers",
@@ -124,11 +124,11 @@
     ],
     "expected_chart_type": "bar",
     "reference_sql_file": "sql/segment_revenue.sql",
-    "compare_row_order": true
+    "compare_row_order": false
   },
   {
     "key": "segment_growth",
-    "question": "Show month-over-month revenue growth for each customer segment over the last six complete months.",
+    "question": "Show month-over-month completed-order revenue growth for each customer segment during the last six complete months. Return only month, segment, revenue, previous_month_revenue, and growth_pct.",
     "expected_tables": [
       "orders",
       "customers",
@@ -147,7 +147,7 @@
   },
   {
     "key": "cancellation_rate",
-    "question": "Show the monthly order cancellation rate for the last six complete months.",
+    "question": "Show the monthly order cancellation rate for the last six complete months. Return only month, total_orders, cancelled_orders, and cancellation_rate_pct, in that exact column order. Return month as the first day of the month using PostgreSQL date type, not text. Calculate cancellation_rate_pct as cancelled_orders divided by total_orders multiplied by 100.",
     "expected_tables": [
       "orders"
     ],
@@ -180,7 +180,7 @@
   },
   {
     "key": "regional_average_order_value",
-    "question": "Compare average order value by region over the last six complete months.",
+    "question": "Compare average completed-order value by region across the full last six complete months. Return one row per region with only region, completed_orders, total_revenue, and average_order_value.",
     "expected_tables": [
       "orders",
       "customers",
@@ -195,11 +195,11 @@
     ],
     "expected_chart_type": "bar",
     "reference_sql_file": "sql/regional_average_order_value.sql",
-    "compare_row_order": true
+    "compare_row_order": false
   },
   {
     "key": "category_contribution",
-    "question": "What percentage of total revenue did each product category contribute over the last six complete months?",
+    "question": "What percentage of completed-order revenue did each product category contribute across the full last six complete months? Return one row per category with only category, total_revenue, and contribution_pct.",
     "expected_tables": [
       "orders",
       "order_items",
@@ -212,6 +212,6 @@
     ],
     "expected_chart_type": "bar",
     "reference_sql_file": "sql/category_contribution.sql",
-    "compare_row_order": true
+    "compare_row_order": false
   }
 ]

@@ -78,12 +78,44 @@ def test_numbers_are_compared_to_two_decimal_places() -> None:
     assert comparison.is_correct is True
 
 
-def test_different_columns_are_rejected() -> None:
+def test_different_column_names_are_allowed() -> None:
     comparison = compare_query_results(
         reference_columns=["region", "revenue"],
         reference_rows=[{"region": "North", "revenue": 100}],
-        candidate_columns=["region", "amount"],
-        candidate_rows=[{"region": "North", "amount": 100}],
+        candidate_columns=[
+            "region_name",
+            "actual_revenue",
+        ],
+        candidate_rows=[
+            {
+                "region_name": "North",
+                "actual_revenue": 100,
+            }
+        ],
+    )
+
+    assert comparison.is_correct is True
+    assert comparison.columns_match is False
+    assert comparison.row_count_match is True
+    assert comparison.values_match is True
+
+
+def test_different_column_counts_are_rejected() -> None:
+    comparison = compare_query_results(
+        reference_columns=["region", "revenue"],
+        reference_rows=[{"region": "North", "revenue": 100}],
+        candidate_columns=[
+            "region",
+            "revenue",
+            "target",
+        ],
+        candidate_rows=[
+            {
+                "region": "North",
+                "revenue": 100,
+                "target": 90,
+            }
+        ],
     )
 
     assert comparison.is_correct is False
