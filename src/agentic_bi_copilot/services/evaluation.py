@@ -1,15 +1,23 @@
 import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ChartType = Literal[
+ChartType: TypeAlias = Literal[
     "line",
     "bar",
     "grouped_bar",
     "table",
 ]
+
+NormalizedRow: TypeAlias = tuple[str, ...]
+
+TWO_DECIMAL_PLACES = Decimal("0.01")
 
 
 class EvaluationCase(BaseModel):
@@ -30,6 +38,21 @@ class EvaluationCase(BaseModel):
     expected_chart_type: ChartType
     reference_sql_file: str = Field(min_length=1)
     compare_row_order: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ResultComparison:
+    """Comparison between a reference result and a candidate result."""
+
+    columns_match: bool
+    row_count_match: bool
+    values_match: bool
+
+    @property
+    def is_correct(self) -> bool:
+        """Return whether every result check passed."""
+
+        return self.columns_match and self.row_count_match and self.values_match
 
 
 def read_evaluation_data(path: Path) -> object:
@@ -83,3 +106,101 @@ def get_reference_sql_path(
     """Return the SQL file path for an evaluation case."""
 
     return cases_path.parent / case.reference_sql_file
+
+
+def normalize_number(
+    value: float | Decimal,
+) -> str:
+    """Normalize a number to two decimal places."""
+
+    normalized_value = Decimal(str(value)).quantize(
+        TWO_DECIMAL_PLACES,
+        rounding=ROUND_HALF_UP,
+    )
+
+    return f"number:{normalized_value}"
+
+
+def normalize_value(value: Any) -> str:
+    """Convert a result value into a comparable string."""
+
+    if value is None:
+        return "null"
+
+    if isinstance(value, bool):
+        return f"boolean:{str(value).lower()}"
+
+    if isinstance(value, (int, float, Decimal)):
+        return normalize_number(value)
+
+    if isinstance(value, datetime):
+        return f"datetime:{value.isoformat()}"
+
+    if isinstance(value, date):
+        return f"date:{value.isoformat()}"
+
+    return f"text:{value}"
+
+
+def normalize_row(
+    row: Mapping[str, Any],
+    columns: tuple[str, ...],
+) -> NormalizedRow:
+    """Normalize one result row using a fixed column order."""
+
+    return tuple(normalize_value(row[column]) for column in columns)
+
+
+def normalize_rows(
+    rows: Sequence[Mapping[str, Any]],
+    columns: tuple[str, ...],
+    compare_row_order: bool,
+) -> tuple[NormalizedRow, ...]:
+    """Normalize result rows and optionally ignore their order."""
+
+    normalized_rows = tuple(normalize_row(row, columns) for row in rows)
+
+    if compare_row_order:
+        return normalized_rows
+
+    return tuple(sorted(normalized_rows))
+
+
+def compare_query_results(
+    reference_columns: Sequence[str],
+    reference_rows: Sequence[Mapping[str, Any]],
+    candidate_columns: Sequence[str],
+    candidate_rows: Sequence[Mapping[str, Any]],
+    compare_row_order: bool = False,
+) -> ResultComparison:
+    """Compare a candidate query result with a reference result."""
+
+    reference_column_names = tuple(reference_columns)
+    candidate_column_names = tuple(candidate_columns)
+
+    columns_match = reference_column_names == candidate_column_names
+    row_count_match = len(reference_rows) == len(candidate_rows)
+
+    if not columns_match or not row_count_match:
+        return ResultComparison(
+            columns_match=columns_match,
+            row_count_match=row_count_match,
+            values_match=False,
+        )
+
+    reference_values = normalize_rows(
+        reference_rows,
+        reference_column_names,
+        compare_row_order,
+    )
+    candidate_values = normalize_rows(
+        candidate_rows,
+        candidate_column_names,
+        compare_row_order,
+    )
+
+    return ResultComparison(
+        columns_match=True,
+        row_count_match=True,
+        values_match=reference_values == candidate_values,
+    )
