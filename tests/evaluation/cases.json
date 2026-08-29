@@ -1,0 +1,217 @@
+[
+  {
+    "key": "regional_revenue_declines",
+    "question": "Compare monthly revenue by region over the last six complete months and identify unusual declines.",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "regions",
+      "order_items"
+    ],
+    "expected_columns": [
+      "month",
+      "region",
+      "revenue",
+      "previous_month_revenue",
+      "month_over_month_change_pct",
+      "unusual_decline"
+    ],
+    "expected_chart_type": "line",
+    "reference_sql_file": "regional_revenue_last_six_months.sql",
+    "compare_row_order": false
+  },
+  {
+    "key": "monthly_revenue",
+    "question": "Show total monthly revenue for the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "order_items"
+    ],
+    "expected_columns": [
+      "month",
+      "revenue"
+    ],
+    "expected_chart_type": "line",
+    "reference_sql_file": "sql/monthly_revenue.sql",
+    "compare_row_order": false
+  },
+  {
+    "key": "top_products",
+    "question": "Which 10 products generated the most revenue in the last six complete months?",
+    "expected_tables": [
+      "orders",
+      "order_items",
+      "products"
+    ],
+    "expected_columns": [
+      "product_id",
+      "product_name",
+      "total_revenue"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/top_products.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "category_revenue",
+    "question": "Compare revenue by product category for the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "order_items",
+      "products"
+    ],
+    "expected_columns": [
+      "category",
+      "total_revenue"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/category_revenue.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "regional_target_performance",
+    "question": "Compare actual revenue with the monthly target for each region over the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "regions",
+      "order_items",
+      "monthly_targets"
+    ],
+    "expected_columns": [
+      "month",
+      "region",
+      "revenue",
+      "revenue_target",
+      "target_variance",
+      "target_achievement_pct"
+    ],
+    "expected_chart_type": "grouped_bar",
+    "reference_sql_file": "sql/regional_target_performance.sql",
+    "compare_row_order": false
+  },
+  {
+    "key": "regions_below_target",
+    "question": "Which regions were below their revenue target in the last complete month?",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "regions",
+      "order_items",
+      "monthly_targets"
+    ],
+    "expected_columns": [
+      "region",
+      "revenue",
+      "revenue_target",
+      "target_variance"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/regions_below_target.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "segment_revenue",
+    "question": "Compare revenue across customer segments over the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "order_items"
+    ],
+    "expected_columns": [
+      "segment",
+      "total_revenue"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/segment_revenue.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "segment_growth",
+    "question": "Show month-over-month revenue growth for each customer segment over the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "order_items"
+    ],
+    "expected_columns": [
+      "month",
+      "segment",
+      "revenue",
+      "previous_month_revenue",
+      "growth_pct"
+    ],
+    "expected_chart_type": "line",
+    "reference_sql_file": "sql/segment_growth.sql",
+    "compare_row_order": false
+  },
+  {
+    "key": "cancellation_rate",
+    "question": "Show the monthly order cancellation rate for the last six complete months.",
+    "expected_tables": [
+      "orders"
+    ],
+    "expected_columns": [
+      "month",
+      "total_orders",
+      "cancelled_orders",
+      "cancellation_rate_pct"
+    ],
+    "expected_chart_type": "line",
+    "reference_sql_file": "sql/cancellation_rate.sql",
+    "compare_row_order": false
+  },
+  {
+    "key": "top_customers",
+    "question": "Which 10 customers generated the most revenue in the last six complete months?",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "order_items"
+    ],
+    "expected_columns": [
+      "customer_id",
+      "customer_name",
+      "total_revenue"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/top_customers.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "regional_average_order_value",
+    "question": "Compare average order value by region over the last six complete months.",
+    "expected_tables": [
+      "orders",
+      "customers",
+      "regions",
+      "order_items"
+    ],
+    "expected_columns": [
+      "region",
+      "completed_orders",
+      "total_revenue",
+      "average_order_value"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/regional_average_order_value.sql",
+    "compare_row_order": true
+  },
+  {
+    "key": "category_contribution",
+    "question": "What percentage of total revenue did each product category contribute over the last six complete months?",
+    "expected_tables": [
+      "orders",
+      "order_items",
+      "products"
+    ],
+    "expected_columns": [
+      "category",
+      "total_revenue",
+      "contribution_pct"
+    ],
+    "expected_chart_type": "bar",
+    "reference_sql_file": "sql/category_contribution.sql",
+    "compare_row_order": true
+  }
+]
