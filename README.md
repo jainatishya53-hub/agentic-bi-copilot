@@ -709,6 +709,58 @@ The test suite covers:
 - JSON and CSV exports
 - Pydantic response schemas
 
+## Evaluation results
+
+The project includes repeatable benchmarks for analytics accuracy, SQL
+safety, processing time, and backend test coverage.
+
+| Metric | Result | Evaluation scope |
+|---|---:|---|
+| Exact-result accuracy | **100%** | 12 natural-language questions matched reference query results |
+| Unsafe-query blocking rate | **100%** | All 20 invalid or unsafe SQL queries were rejected |
+| P95 evaluation processing time | **11.51 seconds** | Measured across the 12-question evaluation suite |
+| Backend test coverage | **89.29%** | 1,393 of 1,560 backend statements covered |
+
+These results apply to the fixed evaluation dataset and environment used by
+this project. They do not represent guaranteed accuracy or response time for
+every possible question, dataset, model, or deployment environment.
+
+Generated reports are stored in:
+
+- [Analytics evaluation report](artifacts/evaluation_report.json)
+- [SQL safety evaluation report](artifacts/safety_evaluation_report.json)
+- [Backend coverage report](artifacts/coverage.json)
+
+### Run the analytics evaluation
+
+The PostgreSQL container must be running, and a valid OpenAI API key must be
+configured.
+
+```bash
+docker compose up -d postgres
+
+uv run python -m \
+  agentic_bi_copilot.services.evaluation_report \
+  --output artifacts/evaluation_report.json
+```
+
+### Run the SQL safety evaluation
+
+```bash
+uv run python -m \
+  agentic_bi_copilot.services.safety_evaluation
+```
+
+### Measure backend test coverage
+
+```bash
+uv run pytest \
+  --cov=agentic_bi_copilot \
+  --cov-report=term-missing \
+  --cov-report=json:artifacts/coverage.json \
+  -q
+```
+
 ## Code formatting
 
 Format the code with:
