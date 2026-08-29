@@ -845,6 +845,16 @@ Current limitations include:
 
 ## Version history
 
+### v0.3.0
+
+- Added a 12-question analytics evaluation suite with reference SQL.
+- Added exact-result comparison and reproducible JSON reports.
+- Achieved 100% exact-result accuracy on the fixed evaluation suite.
+- Blocked all 20 unsafe SQL cases in the safety benchmark.
+- Measured an 11.51-second p95 evaluation processing time.
+- Measured 89.29% backend test coverage.
+- Expanded the automated test suite to 150 tests.
+
 ### v0.2.0
 
 - Added PostgreSQL-backed LangGraph checkpoints.
@@ -875,7 +885,7 @@ Possible future improvements include:
 - A deployed live demonstration
 - User authentication
 - User-specific history
-- More evaluation questions and expected results
+- A larger and more varied evaluation dataset
 - Automated SQL-quality scoring
 - Query-cost estimation
 - Additional chart types
@@ -895,7 +905,8 @@ GitHub: [jainatishya53-hub](https://github.com/jainatishya53-hub)
 The latest completed release is:
 
 ```text
-v0.2.0
+v0.3.0
 ```
 
-It includes persistent agent workflows, analysis history, retries, and result exports.
+It adds reproducible analytics evaluation, SQL safety benchmarking,
+processing-time measurement, and backend coverage reporting.
