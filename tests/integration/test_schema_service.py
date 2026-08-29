@@ -21,10 +21,7 @@ def test_lists_only_allowed_tables() -> None:
 
 def test_returns_product_schema() -> None:
     schema = get_table_schema("products")
-    columns = {
-        column.name: column
-        for column in schema.columns
-    }
+    columns = {column.name: column for column in schema.columns}
 
     assert schema.name == "products"
     assert columns["product_id"].primary_key
@@ -58,14 +55,19 @@ def test_returns_expected_relationships() -> None:
 
 
 def test_builds_restricted_schema_context() -> None:
-    context = build_schema_context(
-        ("orders", "customers", "regions")
-    )
+    context = build_schema_context(("orders", "customers", "regions"))
 
     assert "orders: Order headers." in context
     assert "customers.customer_id" in context
     assert "products:" not in context
     assert "Only orders with status = 'completed'" in context
+
+
+def test_schema_context_defines_valid_order_statuses() -> None:
+    context = build_schema_context(("orders",))
+
+    assert "contains exactly 'completed' and 'cancelled'" in context
+    assert "'canceled'" not in context
 
 
 def test_rejects_unknown_table() -> None:

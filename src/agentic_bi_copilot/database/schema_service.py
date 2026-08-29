@@ -21,6 +21,10 @@ TABLE_DESCRIPTIONS = {
 BUSINESS_RULES = (
     "Revenue equals SUM(order_items.quantity * order_items.unit_price).",
     "Only orders with status = 'completed' count toward revenue.",
+    (
+        "The orders.status column contains exactly 'completed' and "
+        "'cancelled'. Use 'cancelled' with two l characters."
+    ),
     "The dataset ends on 2026-07-31.",
     "The last six complete months are 2026-02-01 through 2026-07-31.",
     "An unusual decline is a month-over-month revenue change below -25%.",
@@ -58,20 +62,24 @@ class TableRelationship:
 
 def get_inspector() -> Inspector:
     """Create a SQLAlchemy database inspector."""
+
     return inspect(get_engine())
 
 
 def list_tables() -> tuple[str, ...]:
     """Return the allowed tables that exist in the database."""
+
     inspector = get_inspector()
     database_tables = set(inspector.get_table_names(schema="public"))
 
     allowed_database_tables = database_tables & ALLOWED_TABLES
+
     return tuple(sorted(allowed_database_tables))
 
 
 def _normalize_table_name(table_name: str) -> str:
     """Clean a table name before checking it."""
+
     return table_name.strip().lower()
 
 
@@ -80,6 +88,7 @@ def _get_primary_key_columns(
     table_name: str,
 ) -> set[str]:
     """Return the primary-key columns for a table."""
+
     primary_key = inspector.get_pk_constraint(
         table_name,
         schema="public",
@@ -94,6 +103,7 @@ def _get_columns(
     primary_key_columns: set[str],
 ) -> tuple[ColumnSchema, ...]:
     """Build the column descriptions for a table."""
+
     database_columns = inspector.get_columns(
         table_name,
         schema="public",
@@ -112,6 +122,7 @@ def _get_columns(
 
 def get_table_schema(table_name: str) -> TableSchema:
     """Return the schema of one allowed table."""
+
     normalized_name = _normalize_table_name(table_name)
 
     if normalized_name not in ALLOWED_TABLES:
@@ -140,6 +151,7 @@ def get_table_schema(table_name: str) -> TableSchema:
 
 def get_table_relationships() -> tuple[TableRelationship, ...]:
     """Return relationships between allowed tables."""
+
     inspector = get_inspector()
     relationships: list[TableRelationship] = []
 
@@ -186,6 +198,7 @@ def _select_tables(
     available_tables: set[str],
 ) -> set[str]:
     """Choose and validate the tables used in the schema context."""
+
     if selected_tables is None:
         return available_tables
 
@@ -202,6 +215,7 @@ def _select_tables(
 
 def _format_column(column: ColumnSchema) -> str:
     """Format one column for the text schema context."""
+
     attributes: list[str] = []
 
     if column.primary_key:
@@ -223,6 +237,7 @@ def _add_table_details(
     requested_tables: set[str],
 ) -> None:
     """Add table and column details to the context."""
+
     for table_name in sorted(requested_tables):
         table_schema = get_table_schema(table_name)
 
@@ -237,6 +252,7 @@ def _add_relationships(
     requested_tables: set[str],
 ) -> None:
     """Add relationships between the selected tables."""
+
     for relationship in get_table_relationships():
         source_is_selected = relationship.source_table in requested_tables
         target_is_selected = relationship.target_table in requested_tables
@@ -254,6 +270,7 @@ def build_schema_context(
     selected_tables: tuple[str, ...] | None = None,
 ) -> str:
     """Build the database information given to the language model."""
+
     available_tables = set(list_tables())
     requested_tables = _select_tables(
         selected_tables,

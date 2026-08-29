@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-08-29T08:24:42.118728+00:00",
+  "metrics": {
+    "chart_type_matches": 11,
+    "correct_cases": 12,
+    "failed_cases": 0,
+    "p95_processing_time_ms": 11512.52,
+    "result_accuracy_pct": 100.0,
+    "total_cases": 12
+  },
+  "outcomes": [
+    {
+      "case_key": "regional_revenue_declines",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH monthly_revenue AS (\n    SELECT\n        date_trunc('month', o.order_date)::date AS month,\n        r.name AS region,\n        SUM(oi.quantity * oi.unit_price) AS revenue\n    FROM orders o\n    JOIN order_items oi\n        ON oi.order_id = o.order_id\n    JOIN customers c\n        ON c.customer_id = o.customer_id\n    JOIN regions r\n        ON r.region_id = c.region_id\n    WHERE o.status = 'completed'\n      AND o.order_date >= DATE '2026-01-01'\n      AND o.order_date <= DATE '2026-07-31'\n    GROUP BY 1, 2\n), revenue_with_lag AS (\n    SELECT\n        month,\n        region,\n        revenue,\n        LAG(revenue) OVER (PARTITION BY region ORDER BY month) AS previous_month_revenue\n    FROM monthly_revenue\n)\nSELECT\n    month,\n    region,\n    revenue,\n    previous_month_revenue,\n    ROUND(\n        100.0 * (revenue - previous_month_revenue)\n        / NULLIF(previous_month_revenue, 0),\n        2\n    ) AS month_over_month_change_pct,\n    CASE\n        WHEN ROUND(\n            100.0 * (revenue - previous_month_revenue)\n            / NULLIF(previous_month_revenue, 0),\n            2\n        ) < -25.0 THEN TRUE\n        ELSE FALSE\n    END AS unusual_decline\nFROM revenue_with_lag\nWHERE month >= DATE '2026-02-01'\n  AND month <= DATE '2026-07-31'\nORDER BY region, month\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 11512.52
+    },
+    {
+      "case_key": "monthly_revenue",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH monthly_revenue AS (SELECT date_trunc('month', o.order_date)::date AS month, SUM(oi.quantity * oi.unit_price) AS revenue FROM orders o JOIN order_items oi ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATE '2026-01-01' AND o.order_date <= DATE '2026-07-31' GROUP BY 1) SELECT month, revenue FROM monthly_revenue WHERE month >= DATE '2026-02-01' AND month < DATE '2026-08-01' ORDER BY month LIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 9214.9
+    },
+    {
+      "case_key": "top_products",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH completed_orders AS (\n    SELECT o.order_id\n    FROM orders o\n    WHERE o.status = 'completed'\n      AND o.order_date BETWEEN DATE '2026-02-01' AND DATE '2026-07-31'\n), product_revenue AS (\n    SELECT\n        p.product_id,\n        p.name AS product_name,\n        SUM(oi.quantity * oi.unit_price) AS total_revenue\n    FROM order_items oi\n    JOIN completed_orders co\n      ON oi.order_id = co.order_id\n    JOIN products p\n      ON oi.product_id = p.product_id\n    GROUP BY p.product_id, p.name\n)\nSELECT\n    product_id,\n    product_name,\n    total_revenue\nFROM product_revenue\nORDER BY total_revenue DESC, product_id\nLIMIT 10;",
+      "is_correct": true,
+      "processing_time_ms": 8827.81
+    },
+    {
+      "case_key": "category_revenue",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_price) AS total_revenue\nFROM orders o\nJOIN order_items oi ON oi.order_id = o.order_id\nJOIN products p ON p.product_id = oi.product_id\nWHERE o.status = 'completed'\n  AND o.order_date BETWEEN DATE '2026-02-01' AND DATE '2026-07-31'\nGROUP BY p.category\nORDER BY p.category\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 7017.77
+    },
+    {
+      "case_key": "regional_target_performance",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH completed_order_revenue AS (\n    SELECT\n        date_trunc('month', o.order_date)::date AS month,\n        r.name AS region,\n        SUM(oi.quantity * oi.unit_price) AS revenue\n    FROM orders o\n    JOIN order_items oi\n        ON oi.order_id = o.order_id\n    JOIN customers c\n        ON c.customer_id = o.customer_id\n    JOIN regions r\n        ON r.region_id = c.region_id\n    WHERE o.status = 'completed'\n      AND o.order_date >= DATE '2026-02-01'\n      AND o.order_date <= DATE '2026-07-31'\n    GROUP BY 1, 2\n), targets AS (\n    SELECT\n        mt.month,\n        r.name AS region,\n        mt.revenue_target\n    FROM monthly_targets mt\n    JOIN regions r\n        ON r.region_id = mt.region_id\n    WHERE mt.month >= DATE '2026-02-01'\n      AND mt.month <= DATE '2026-07-01'\n)\nSELECT\n    t.month,\n    t.region,\n    COALESCE(cor.revenue, 0) AS revenue,\n    t.revenue_target,\n    COALESCE(cor.revenue, 0) - t.revenue_target AS target_variance,\n    ROUND(100.0 * COALESCE(cor.revenue, 0) / NULLIF(t.revenue_target, 0), 2) AS target_achievement_pct\nFROM targets t\nLEFT JOIN completed_order_revenue cor\n    ON cor.month = t.month\n   AND cor.region = t.region\nORDER BY t.month, t.region\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 11027.35
+    },
+    {
+      "case_key": "regions_below_target",
+      "chart_type_match": false,
+      "error": null,
+      "generated_sql": "WITH region_revenue AS (\n    SELECT\n        c.region_id,\n        SUM(oi.quantity * oi.unit_price) AS revenue\n    FROM orders o\n    JOIN order_items oi\n        ON oi.order_id = o.order_id\n    JOIN customers c\n        ON c.customer_id = o.customer_id\n    WHERE o.status = 'completed'\n      AND o.order_date >= DATE '2026-07-01'\n      AND o.order_date < DATE '2026-08-01'\n    GROUP BY c.region_id\n)\nSELECT\n    r.name AS region,\n    rr.revenue AS revenue,\n    mt.revenue_target AS revenue_target,\n    rr.revenue - mt.revenue_target AS target_variance\nFROM region_revenue rr\nJOIN monthly_targets mt\n    ON mt.region_id = rr.region_id\n   AND mt.month = DATE '2026-07-01'\nJOIN regions r\n    ON r.region_id = rr.region_id\nWHERE rr.revenue < mt.revenue_target\nORDER BY target_variance ASC, region ASC\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 9772.16
+    },
+    {
+      "case_key": "segment_revenue",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "SELECT c.segment AS segment, ROUND(SUM(oi.quantity * oi.unit_price), 2) AS total_revenue\nFROM orders o\nJOIN order_items oi ON oi.order_id = o.order_id\nJOIN customers c ON c.customer_id = o.customer_id\nWHERE o.status = 'completed'\n  AND o.order_date >= DATE '2026-02-01'\n  AND o.order_date <= DATE '2026-07-31'\nGROUP BY c.segment\nORDER BY c.segment\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 8649.58
+    },
+    {
+      "case_key": "segment_growth",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH monthly_revenue AS (\n    SELECT\n        date_trunc('month', o.order_date)::date AS month,\n        c.segment AS segment,\n        SUM(oi.quantity * oi.unit_price) AS revenue\n    FROM orders o\n    JOIN order_items oi\n        ON oi.order_id = o.order_id\n    JOIN customers c\n        ON c.customer_id = o.customer_id\n    WHERE o.status = 'completed'\n      AND o.order_date >= DATE '2026-01-01'\n      AND o.order_date < DATE '2026-08-01'\n    GROUP BY 1, 2\n), monthly_with_lag AS (\n    SELECT\n        month,\n        segment,\n        revenue,\n        LAG(revenue) OVER (\n            PARTITION BY segment\n            ORDER BY month\n        ) AS previous_month_revenue\n    FROM monthly_revenue\n)\nSELECT\n    month,\n    segment,\n    revenue,\n    previous_month_revenue,\n    ROUND(\n        100.0 * (revenue - previous_month_revenue) / NULLIF(previous_month_revenue, 0),\n        2\n    ) AS growth_pct\nFROM monthly_with_lag\nWHERE month >= DATE '2026-02-01'\n  AND month < DATE '2026-08-01'\nORDER BY month, segment\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 10701.6
+    },
+    {
+      "case_key": "cancellation_rate",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "SELECT\n  date_trunc('month', order_date)::date AS month,\n  COUNT(*) AS total_orders,\n  COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_orders,\n  ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'cancelled') / NULLIF(COUNT(*), 0), 2) AS cancellation_rate_pct\nFROM orders\nWHERE order_date >= DATE '2026-02-01'\n  AND order_date < DATE '2026-08-01'\nGROUP BY 1\nORDER BY 1\nLIMIT 500",
+      "is_correct": true,
+      "processing_time_ms": 7872.88
+    },
+    {
+      "case_key": "top_customers",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH customer_revenue AS (\n    SELECT\n        c.customer_id,\n        c.name AS customer_name,\n        SUM(oi.quantity * oi.unit_price) AS total_revenue\n    FROM customers c\n    JOIN orders o\n        ON o.customer_id = c.customer_id\n    JOIN order_items oi\n        ON oi.order_id = o.order_id\n    WHERE o.status = 'completed'\n      AND o.order_date BETWEEN DATE '2026-02-01' AND DATE '2026-07-31'\n    GROUP BY c.customer_id, c.name\n)\nSELECT\n    customer_id,\n    customer_name,\n    total_revenue\nFROM customer_revenue\nORDER BY total_revenue DESC, customer_id\nLIMIT 10;",
+      "is_correct": true,
+      "processing_time_ms": 8527.8
+    },
+    {
+      "case_key": "regional_average_order_value",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "SELECT r.name AS region, COUNT(DISTINCT o.order_id) AS completed_orders, SUM(oi.quantity * oi.unit_price) AS total_revenue, ROUND(SUM(oi.quantity * oi.unit_price) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS average_order_value FROM orders o JOIN order_items oi ON oi.order_id = o.order_id JOIN customers c ON c.customer_id = o.customer_id JOIN regions r ON r.region_id = c.region_id WHERE o.status = 'completed' AND o.order_date >= DATE '2026-02-01' AND o.order_date <= DATE '2026-07-31' GROUP BY r.name ORDER BY r.name LIMIT 500",
+      "is_correct": true,
+      "processing_time_ms": 9280.65
+    },
+    {
+      "case_key": "category_contribution",
+      "chart_type_match": true,
+      "error": null,
+      "generated_sql": "WITH category_revenue AS (\n    SELECT\n        p.category AS category,\n        SUM(oi.quantity * oi.unit_price) AS total_revenue\n    FROM orders o\n    JOIN order_items oi\n        ON o.order_id = oi.order_id\n    JOIN products p\n        ON oi.product_id = p.product_id\n    WHERE o.status = 'completed'\n      AND o.order_date >= DATE '2026-02-01'\n      AND o.order_date <= DATE '2026-07-31'\n    GROUP BY p.category\n), total_revenue AS (\n    SELECT SUM(total_revenue) AS grand_total_revenue\n    FROM category_revenue\n)\nSELECT\n    cr.category,\n    cr.total_revenue,\n    ROUND(100.0 * cr.total_revenue / NULLIF(tr.grand_total_revenue, 0), 2) AS contribution_pct\nFROM category_revenue cr\nCROSS JOIN total_revenue tr\nORDER BY cr.total_revenue DESC\nLIMIT 500;",
+      "is_correct": true,
+      "processing_time_ms": 10000.91
+    }
+  ]
+}

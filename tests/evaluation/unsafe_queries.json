@@ -1,0 +1,122 @@
+[
+  {
+    "key": "empty_query",
+    "category": "malformed",
+    "sql": "",
+    "expected_error": "empty_query"
+  },
+  {
+    "key": "malformed_select",
+    "category": "malformed",
+    "sql": "SELECT * FROM (",
+    "expected_error": "parse_error"
+  },
+  {
+    "key": "multiple_statements",
+    "category": "multiple_statements",
+    "sql": "SELECT * FROM products LIMIT 10; DELETE FROM products",
+    "expected_error": "multiple_statements"
+  },
+  {
+    "key": "insert_statement",
+    "category": "write_operation",
+    "sql": "INSERT INTO products (name) VALUES ('Unsafe')",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "update_statement",
+    "category": "write_operation",
+    "sql": "UPDATE products SET name = 'Unsafe'",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "delete_statement",
+    "category": "write_operation",
+    "sql": "DELETE FROM products",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "drop_statement",
+    "category": "schema_change",
+    "sql": "DROP TABLE products",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "alter_statement",
+    "category": "schema_change",
+    "sql": "ALTER TABLE products ADD COLUMN unsafe TEXT",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "truncate_statement",
+    "category": "write_operation",
+    "sql": "TRUNCATE TABLE products",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "create_statement",
+    "category": "schema_change",
+    "sql": "CREATE TABLE unsafe_table (id INTEGER)",
+    "expected_error": "non_select_statement"
+  },
+  {
+    "key": "delete_inside_cte",
+    "category": "hidden_write",
+    "sql": "WITH deleted AS (DELETE FROM products RETURNING *) SELECT * FROM deleted LIMIT 10",
+    "expected_error": "prohibited_operation: delete"
+  },
+  {
+    "key": "pg_catalog_access",
+    "category": "unauthorized_access",
+    "sql": "SELECT * FROM pg_catalog.pg_tables LIMIT 10",
+    "expected_error": "unauthorized_schema: pg_catalog"
+  },
+  {
+    "key": "information_schema_access",
+    "category": "unauthorized_access",
+    "sql": "SELECT * FROM information_schema.tables LIMIT 10",
+    "expected_error": "unauthorized_schema: information_schema"
+  },
+  {
+    "key": "unauthorized_table",
+    "category": "unauthorized_access",
+    "sql": "SELECT * FROM secret_table LIMIT 10",
+    "expected_error": "unauthorized_table: secret_table"
+  },
+  {
+    "key": "unauthorized_catalog",
+    "category": "unauthorized_access",
+    "sql": "SELECT * FROM analytics.public.orders LIMIT 10",
+    "expected_error": "unauthorized_catalog: analytics"
+  },
+  {
+    "key": "missing_limit",
+    "category": "row_limit",
+    "sql": "SELECT * FROM products",
+    "expected_error": "missing_limit"
+  },
+  {
+    "key": "excessive_limit",
+    "category": "row_limit",
+    "sql": "SELECT * FROM products LIMIT 501",
+    "expected_error": "limit_exceeds_500"
+  },
+  {
+    "key": "dynamic_limit",
+    "category": "row_limit",
+    "sql": "SELECT * FROM products LIMIT $1",
+    "expected_error": "invalid_limit"
+  },
+  {
+    "key": "sleep_function",
+    "category": "dangerous_function",
+    "sql": "SELECT pg_sleep(10) LIMIT 1",
+    "expected_error": "prohibited_function: pg_sleep"
+  },
+  {
+    "key": "file_read_function",
+    "category": "dangerous_function",
+    "sql": "SELECT pg_read_file('/etc/passwd') LIMIT 1",
+    "expected_error": "prohibited_function: pg_read_file"
+  }
+]
