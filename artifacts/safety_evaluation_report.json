@@ -1,0 +1,211 @@
+{
+  "metrics": {
+    "total_queries": 20,
+    "blocked_queries": 20,
+    "blocking_rate_pct": 100.0,
+    "expected_reason_matches": 20,
+    "failed_cases": 0
+  },
+  "outcomes": [
+    {
+      "case_key": "empty_query",
+      "category": "malformed",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "empty_query"
+      ]
+    },
+    {
+      "case_key": "malformed_select",
+      "category": "malformed",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "parse_error: Expected table name but got <Token token_type: TokenType.SENTINEL, text: SENTINEL, line: 1, col: 1, start: 0, end: 0, comments: []>. Line 1, Col: 15.\n  SELECT * FROM \u001b[4m(\u001b[0m"
+      ]
+    },
+    {
+      "case_key": "multiple_statements",
+      "category": "multiple_statements",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "multiple_statements"
+      ]
+    },
+    {
+      "case_key": "insert_statement",
+      "category": "write_operation",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "update_statement",
+      "category": "write_operation",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "delete_statement",
+      "category": "write_operation",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "drop_statement",
+      "category": "schema_change",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "alter_statement",
+      "category": "schema_change",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "truncate_statement",
+      "category": "write_operation",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "create_statement",
+      "category": "schema_change",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "non_select_statement"
+      ]
+    },
+    {
+      "case_key": "delete_inside_cte",
+      "category": "hidden_write",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "prohibited_operation: delete"
+      ]
+    },
+    {
+      "case_key": "pg_catalog_access",
+      "category": "unauthorized_access",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "unauthorized_schema: pg_catalog"
+      ]
+    },
+    {
+      "case_key": "information_schema_access",
+      "category": "unauthorized_access",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "unauthorized_schema: information_schema"
+      ]
+    },
+    {
+      "case_key": "unauthorized_table",
+      "category": "unauthorized_access",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "unauthorized_table: secret_table"
+      ]
+    },
+    {
+      "case_key": "unauthorized_catalog",
+      "category": "unauthorized_access",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "unauthorized_catalog: analytics"
+      ]
+    },
+    {
+      "case_key": "missing_limit",
+      "category": "row_limit",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "missing_limit"
+      ]
+    },
+    {
+      "case_key": "excessive_limit",
+      "category": "row_limit",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "limit_exceeds_500"
+      ]
+    },
+    {
+      "case_key": "dynamic_limit",
+      "category": "row_limit",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "invalid_limit"
+      ]
+    },
+    {
+      "case_key": "sleep_function",
+      "category": "dangerous_function",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "prohibited_function: pg_sleep"
+      ]
+    },
+    {
+      "case_key": "file_read_function",
+      "category": "dangerous_function",
+      "blocked": true,
+      "reason_matches": true,
+      "passed": true,
+      "errors": [
+        "prohibited_function: pg_read_file"
+      ]
+    }
+  ]
+}
